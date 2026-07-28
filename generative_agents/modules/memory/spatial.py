@@ -3,15 +3,16 @@
 import random
 
 from modules import utils
+from ..prompt.keywords import KW_BED, KW_LIVING_AREA, KW_SLEEPING, KW_SLEEPING_EN
 
 
 class Spatial:
     def __init__(self, tree, address=None):
         self.tree = tree
         self.address = address or {}
-        if "sleeping" not in self.address and "睡觉" not in self.address and "living_area" in self.address:
+        if KW_SLEEPING_EN not in self.address and KW_SLEEPING not in self.address and KW_LIVING_AREA in self.address:
             # self.address["sleeping"] = self.address["living_area"] + ["bed"]
-            self.address["睡觉"] = self.address["living_area"] + ["床"]
+            self.address[KW_SLEEPING] = self.address[KW_LIVING_AREA] + [KW_BED]
 
     def __str__(self):
         return utils.dump_dict(self.tree)

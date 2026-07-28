@@ -8,6 +8,16 @@ import datetime
 from modules import memory, prompt, utils
 from modules.model.llm_model import create_llm_model
 from modules.memory.associate import Concept
+from .prompt.keywords import (
+    KW_AT_THIS_TIME,
+    KW_CHAT,
+    KW_IDLE,
+    KW_OCCUPIED,
+    KW_ONGOING,
+    KW_PENDING,
+    KW_SLEEP,
+    KW_SLEEPING,
+)
 
 
 class Agent:
@@ -108,17 +118,17 @@ class Agent:
         events = self.move(status["coord"], status.get("path"))
         plan, _ = self.make_schedule()
 
-        if (plan["describe"] == "sleeping" or "睡" in plan["describe"]) and self.is_awake():
+        if (plan["describe"] == "sleeping" or KW_SLEEP in plan["describe"]) and self.is_awake():
             self.logger.info("{} is going to sleep...".format(self.name))
-            address = self.spatial.find_address("睡觉", as_list=True)
+            address = self.spatial.find_address(KW_SLEEPING, as_list=True)
             tiles = self.maze.get_address_tiles(address)
             coord = random.choice(list(tiles))
             events = self.move(coord)
             self.action = memory.Action(
-                memory.Event(self.name, "正在", "睡觉", address=address, emoji="😴"),
+                memory.Event(self.name, KW_ONGOING, KW_SLEEPING, address=address, emoji="😴"),
                 memory.Event(
                     address[-1],
-                    "被占用",
+                    KW_OCCUPIED,
                     self.name,
                     address=address,
                     emoji="🛌",
@@ -185,7 +195,7 @@ class Agent:
             if self.associate.index.nodes_num > 0:
                 self.associate.cleanup_index()
                 focus = [
-                    f"{self.name} 在 {utils.get_timer().daily_format_cn()} 的计划。",
+                    f"{self.name} 在 {utils.get_timer().daily_format_cn()} 的計劃。",
                     f"在 {self.name} 的生活中，重要的近期事件。",
                 ]
                 retrieved = self.associate.retrieve_focus(focus)
@@ -205,7 +215,7 @@ class Agent:
             # make daily schedule
             hours = [f"{i}:00" for i in range(24)]
             # seed = [(h, "sleeping") for h in hours[:wake_up]]
-            seed = [(h, "睡觉") for h in hours[:wake_up]]
+            seed = [(h, KW_SLEEPING) for h in hours[:wake_up]]
             seed += [(h, "") for h in hours[wake_up:]]
             schedule = {}
             for _ in range(self.schedule.max_try):
@@ -225,12 +235,12 @@ class Agent:
                 end = starts[idx + 1] if idx + 1 < len(starts) else 24 * 60
                 self.schedule.add_plan(schedule[start], end - start)
             schedule_time = utils.get_timer().time_format_cn(self.schedule.create)
-            thought = "这是 {} 在 {} 的计划：{}".format(
+            thought = "這是 {} 在 {} 的計劃：{}".format(
                 self.name, schedule_time, "；".join(init_schedule)
             )
             event = memory.Event(
                 self.name,
-                "计划",
+                "計劃",
                 schedule_time,
                 describe=thought,
                 address=self.get_tile().get_address(),
@@ -292,13 +302,13 @@ class Agent:
             )
             recent_nodes = set(n.describe for n in recent_nodes)
             if event.get_describe() not in recent_nodes:
-                if event.object == "idle" or event.object == "空闲":
+                if event.object == "idle" or event.object == KW_IDLE:
                     node = Concept.from_event(
                         "idle_" + str(idx), "event", event, poignancy=1
                     )
                 else:
                     valid_num += 1
-                    node_type = "chat" if event.fit(self.name, "对话") else "event"
+                    node_type = "chat" if event.fit(self.name, KW_CHAT) else "event"
                     node = self._add_concept(node_type, event)
                     self.status["poignancy"] += node.poignancy
                 self.concepts.append(node)
@@ -323,12 +333,12 @@ class Agent:
         # )
 
         e_describe = describe.replace("(", "").replace(")", "").replace("<", "").replace(">", "")
-        if e_describe.startswith(subject + "此时"):
-            e_describe = e_describe[len(subject + "此时"):]
+        if e_describe.startswith(subject + KW_AT_THIS_TIME):
+            e_describe = e_describe[len(subject + KW_AT_THIS_TIME):]
         if e_describe.startswith(subject):
             e_describe = e_describe[len(subject):]
         event = memory.Event(
-            subject, "此时", e_describe, describe=describe, address=address
+            subject, KW_AT_THIS_TIME, e_describe, describe=describe, address=address
         )
         return event
 
@@ -377,7 +387,7 @@ class Agent:
                     node = res[-1]
                     evidence.append(node.node_id)
             thought = self.completion("reflect_chat_planing", self.chats)
-            _add_thought(f"对于 {self.name} 的计划：{thought}", evidence)
+            _add_thought(f"對於 {self.name} 的計劃：{thought}", evidence)
             thought = self.completion("reflect_chat_memory", self.chats)
             _add_thought(f"{self.name} {thought}", evidence)
         self.status["poignancy"] = 0
@@ -458,7 +468,7 @@ class Agent:
 
     def _reaction(self, agents=None, ignore_words=None):
         focus = None
-        ignore_words = ignore_words or ["空闲"]
+        ignore_words = ignore_words or [KW_IDLE]
 
         def _focus(concept):
             return concept.event.subject in agents
@@ -486,9 +496,9 @@ class Agent:
 
     def _skip_react(self, other):
         def _skip(event):
-            if not event.address or "sleeping" in event.get_describe(False) or "睡觉" in event.get_describe(False):
+            if not event.address or "sleeping" in event.get_describe(False) or KW_SLEEPING in event.get_describe(False):
                 return True
-            if event.predicate == "待开始":
+            if event.predicate == KW_PENDING:
                 return True
             return False
 
@@ -506,7 +516,7 @@ class Agent:
             return False
         if other.path:
             return False
-        if self.get_event().fit(predicate="对话") or other.get_event().fit(predicate="对话"):
+        if self.get_event().fit(predicate=KW_CHAT) or other.get_event().fit(predicate=KW_CHAT):
             return False
 
         chats = self.associate.retrieve_chats(other.name)
@@ -621,7 +631,7 @@ class Agent:
         self.chats.extend(chats)
         event = memory.Event(
             self.name,
-            "对话",
+            KW_CHAT,
             other.name,
             describe=chats_summary,
             address=address or self.get_tile().get_address(),
@@ -639,7 +649,7 @@ class Agent:
     ):
         if event.fit(None, "is", "idle"):
             poignancy = 1
-        elif event.fit(None, "此时", "空闲"):
+        elif event.fit(None, KW_AT_THIS_TIME, KW_IDLE):
             poignancy = 1
         elif e_type == "chat":
             poignancy = self.completion("poignancy_chat", event)
@@ -666,7 +676,7 @@ class Agent:
             return True
         if self.get_event().fit(self.name, "is", "sleeping"):
             return False
-        if self.get_event().fit(self.name, "正在", "睡觉"):
+        if self.get_event().fit(self.name, KW_ONGOING, KW_SLEEPING):
             return False
         return True
 

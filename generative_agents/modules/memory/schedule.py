@@ -1,6 +1,7 @@
 """generative_agents.memory.schedule"""
 
 from modules import utils
+from ..prompt.keywords import KW_BED, KW_SLEEP
 
 
 class Schedule:
@@ -77,15 +78,15 @@ class Schedule:
         describe = plan["describe"]
         if "sleep" not in describe and "bed" not in describe:
             return True
-        if "睡" not in describe and "床" not in describe:
+        if KW_SLEEP not in describe and KW_BED not in describe:
             return True
         if "sleeping" in describe or "asleep" in describe or "in bed" in describe:
             return False
-        if "睡" in describe or "床" in describe:
+        if KW_SLEEP in describe or KW_BED in describe:
             return False
         if "sleep" in describe or "bed" in describe:
             return plan["duration"] <= 60
-        if "睡" in describe or "床" in describe:
+        if KW_SLEEP in describe or KW_BED in describe:
             return plan["duration"] <= 60
         return True
 

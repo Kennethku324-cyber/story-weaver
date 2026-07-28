@@ -8,6 +8,21 @@ from dotenv import load_dotenv, find_dotenv
 
 from modules.game import create_game, get_game
 from modules import utils
+from modules.model.text_normalize import contains_simplified
+
+
+def _contains_simplified_text(obj):
+    """遞歸掃描 JSON 結構（dict/list/str），命中簡體黑名單字即返回 True。"""
+    if isinstance(obj, str):
+        return contains_simplified(obj)
+    if isinstance(obj, list):
+        return any(_contains_simplified_text(i) for i in obj)
+    if isinstance(obj, dict):
+        return any(
+            _contains_simplified_text(k) or _contains_simplified_text(v)
+            for k, v in obj.items()
+        )
+    return False
 
 personas = [
     "阿伊莎", "克劳斯", "玛丽亚", "沃尔夫冈",  # 学生
@@ -44,6 +59,13 @@ class SimulateServer:
             self.logger = utils.create_file_logger(f"{checkpoints_folder}/{log_file}", verbose)
         else:
             self.logger = utils.create_io_logger(verbose)
+
+        # checkpoint 簡體偵測：舊簡體 checkpoint 唔做靜默轉換（PRD 邊界 3），只 warning
+        if _contains_simplified_text(conversation) or _contains_simplified_text(config):
+            self.logger.warning(
+                "偵測到簡體 checkpoint，建議運行 python scripts/localization/migrate_checkpoint.py %s",
+                checkpoints_folder,
+            )
 
         # 创建游戏
         game = create_game(name, static_root, config, conversation, logger=self.logger)

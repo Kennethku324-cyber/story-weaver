@@ -5,6 +5,8 @@ import re
 import requests
 from magentic import prompt
 
+from .text_normalize import normalize_llm_output
+
 
 class LLMModel:
     def __init__(self, config):
@@ -36,6 +38,7 @@ class LLMModel:
         for _ in range(retry):
             try:
                 output = self._completion(prompt, return_type, **kwargs)
+                output = normalize_llm_output(output, return_type)
                 self._summary["total"][0] += 1
                 self._summary[caller][0] += 1
                 if callback:

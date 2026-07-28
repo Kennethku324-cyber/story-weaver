@@ -1,5 +1,7 @@
 """generative_agents.memory.event"""
 
+from ..prompt.keywords import KW_AT_THIS_TIME, KW_IDLE
+
 
 class Event:
     def __init__(
@@ -14,8 +16,8 @@ class Event:
         self.subject = subject
         # self.predicate = predicate or "is"
         # self.object = object or "idle"
-        self.predicate = predicate or "此时"
-        self.object = object or "空闲"
+        self.predicate = predicate or KW_AT_THIS_TIME
+        self.object = object or KW_IDLE
         self._describe = describe or ""
         self.address = address or []
         self.emoji = emoji or ""
@@ -50,8 +52,8 @@ class Event:
     def update(self, predicate=None, object=None, describe=None):
         # self.predicate = predicate or "is"
         # self.object = object or "idle"
-        self.predicate = predicate or "此时"
-        self.object = object or "空闲"
+        self.predicate = predicate or KW_AT_THIS_TIME
+        self.object = object or KW_IDLE
         self._describe = describe or self._describe
 
     def to_id(self):

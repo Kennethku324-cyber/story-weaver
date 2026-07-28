@@ -8,6 +8,7 @@ from llama_index.core.indices.vector_store.retrievers import VectorIndexRetrieve
 from modules.storage.index import LlamaIndex
 from modules import utils
 from .event import Event
+from ..prompt.keywords import KW_CHAT
 
 
 class Concept:
@@ -218,7 +219,7 @@ class Associate:
         return self._retrieve_nodes("thought", text)
 
     def retrieve_chats(self, name=None):
-        text = ("对话 " + name) if name else None
+        text = (KW_CHAT + " " + name) if name else None
         return self._retrieve_nodes("chat", text)
 
     def retrieve_focus(self, focus, retrieve_max=30, reduce_all=True):

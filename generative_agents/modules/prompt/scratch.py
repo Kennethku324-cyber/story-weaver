@@ -7,6 +7,7 @@ from collections import namedtuple
 from typing import List, Tuple
 from modules import utils
 from modules.memory import Event
+from .keywords import KW_AT_THIS_TIME, KW_IDLE, KW_SLEEPING, KW_TRUE_TOKENS
 
 
 Result = namedtuple("Result", ["prompt", "callback", "failsafe", "return_type"])
@@ -53,7 +54,7 @@ class Scratch:
         )
 
         class PoignancyEventResponse(BaseModel):
-            res: int = Field(description="事件的情感强度评分，整数，范围1到10")
+            res: int = Field(description="事件的情感強度評分，整數，範圍1到10")
 
         return Result(prompt, None, random.choice(list(range(10))) + 1, PoignancyEventResponse)
 
@@ -68,7 +69,7 @@ class Scratch:
         )
 
         class PoignancyChatResponse(BaseModel):
-            res: int = Field(description="对话的情感强度评分，整数，范围1到10")
+            res: int = Field(description="對話的情感強度評分，整數，範圍1到10")
 
         return Result(prompt, None, random.choice(list(range(10))) + 1, PoignancyChatResponse)
 
@@ -83,7 +84,7 @@ class Scratch:
         )
 
         class wakeupResponse(BaseModel):
-            res: int = Field(description="起床时间，24小时制的小时数，整数，范围0到11")
+            res: int = Field(description="起床時間，24小時制的小時數，整數，範圍0到11")
 
         def _callback(response):
             value = response
@@ -105,29 +106,29 @@ class Scratch:
         )
 
         class schedule_initResponse(BaseModel):
-            res: list[str] = Field(description="按时间顺序排列的日程活动列表，每项为简短的活动描述")
+            res: list[str] = Field(description="按時間順序排列的日程活動列表，每項為簡短的活動描述")
 
         def _callback(response):
             assert len(response) >= 3, "schedule_init: too few items"
             return response
 
         failsafe = [
-            "早上6点起床并完成早餐的例行工作",
-            "早上7点吃早餐",
-            "早上8点看书",
-            "中午12点吃午饭",
-            "下午1点小睡一会儿",
-            "晚上7点放松一下，看电视",
-            "晚上11点睡觉",
+            "早上6點起床並完成早餐的例行工作",
+            "早上7點吃早餐",
+            "早上8點看書",
+            "中午12點吃午飯",
+            "下午1點小睡片刻",
+            "晚上7點放鬆一下，看電視",
+            "晚上11點睡覺",
         ]
         return Result(prompt, _callback, failsafe, schedule_initResponse)
 
     def prompt_schedule_daily(self, wake_up, daily_schedule):
         hourly_schedule = ""
         for i in range(wake_up):
-            hourly_schedule += f"[{i}:00] 睡觉\n"
+            hourly_schedule += f"[{i}:00] {KW_SLEEPING}\n"
         for i in range(wake_up, 24):
-            hourly_schedule += f"[{i}:00] <活动>\n"
+            hourly_schedule += f"[{i}:00] <活動>\n"
 
         prompt = self.build_prompt(
             "schedule_daily",
@@ -140,27 +141,27 @@ class Scratch:
         )
 
         class schedule_dailyResponse(BaseModel):
-            res: dict[str, str] = Field(description="24小时日程表，键为时间字符串如'8:00'，值为该时段的活动描述")
+            res: dict[str, str] = Field(description="24小時日程表，鍵為時間字符串如'8:00'，值為該時段的活動描述")
 
         failsafe = {
-            "6:00": "起床并完成早晨的例行工作",
+            "6:00": "起床並完成早晨的例行工作",
             "7:00": "吃早餐",
-            "8:00": "读书",
-            "9:00": "读书",
-            "10:00": "读书",
-            "11:00": "读书",
-            "12:00": "吃午饭",
-            "13:00": "小睡一会儿",
-            "14:00": "小睡一会儿",
-            "15:00": "小睡一会儿",
-            "16:00": "继续工作",
-            "17:00": "继续工作",
+            "8:00": "讀書",
+            "9:00": "讀書",
+            "10:00": "讀書",
+            "11:00": "讀書",
+            "12:00": "吃午飯",
+            "13:00": "小睡片刻",
+            "14:00": "小睡片刻",
+            "15:00": "小睡片刻",
+            "16:00": "繼續工作",
+            "17:00": "繼續工作",
             "18:00": "回家",
-            "19:00": "放松，看电视",
-            "20:00": "放松，看电视",
-            "21:00": "睡前看书",
-            "22:00": "准备睡觉",
-            "23:00": "睡觉",
+            "19:00": "放鬆，看電視",
+            "20:00": "放鬆，看電視",
+            "21:00": "睡前看書",
+            "22:00": "準備睡覺",
+            "23:00": "睡覺",
         }
 
         def _callback(response):
@@ -172,7 +173,7 @@ class Scratch:
     def prompt_schedule_decompose(self, plan, schedule):
         def _plan_des(plan):
             start, end = schedule.plan_stamps(plan, time_format="%H:%M")
-            return f'{start} 至 {end}，{self.name} 计划 {plan["describe"]}'
+            return f'{start} 至 {end}，{self.name} 計劃 {plan["describe"]}'
 
         indices = range(
             max(plan["idx"] - 1, 0), min(plan["idx"] + 2, len(schedule.daily_schedule))
@@ -194,7 +195,7 @@ class Scratch:
         )
 
         class schedule_decomposeResponse(BaseModel):
-            res: List[Tuple[str, int]] = Field(description="子任务列表，每项为 [活动描述, 时长分钟数] 的元组")
+            res: List[Tuple[str, int]] = Field(description="子任務列表，每項為 [活動描述, 時長分鐘數] 的元組")
 
         def _callback(response):
             left = plan["duration"] - sum([s[1] for s in response])
@@ -249,7 +250,7 @@ class Scratch:
         )
 
         class schedule_reviseResponse(BaseModel):
-            res: List[Tuple[str, str, str]] = Field(description="调整后的完整日程列表，每项为 [开始时间, 结束时间, 活动描述] 的元组，时间格式为 HH:MM")
+            res: List[Tuple[str, str, str]] = Field(description="調整後的完整日程列表，每項為 [開始時間, 結束時間, 活動描述] 的元組，時間格式為 HH:MM")
 
         def _callback(response):  
             # response已经是List[Tuple[str, str, str]]类型  
@@ -298,7 +299,7 @@ class Scratch:
         failsafe = random.choice(sectors)
 
         class determine_sectorResponse(BaseModel):
-            res: str = Field(description="从给定列表中选出的目标区域名称，必须与列表中的某项完全一致")
+            res: str = Field(description="從給定列表中選出的目標區域名稱，必須與列表中的某項完全一致")
 
         def _callback(response):  
             # response已经是str类型  
@@ -330,7 +331,7 @@ class Scratch:
         failsafe = random.choice(arenas)
 
         class determine_arenaResponse(BaseModel):
-            res: str = Field(description="从给定列表中选出的目标场所名称，必须与列表中的某项完全一致")
+            res: str = Field(description="從給定列表中選出的目標場所名稱，必須與列表中的某項完全一致")
 
         def _callback(response):
             return response if response in arenas else failsafe
@@ -351,7 +352,7 @@ class Scratch:
         failsafe = random.choice(objects)
 
         class determine_objectResponse(BaseModel):
-            res: str = Field(description="从给定列表中选出的最相关对象名称，必须与列表中的某项完全一致")
+            res: str = Field(description="從給定列表中選出的最相關對象名稱，必須與列表中的某項完全一致")
         def _callback(response):
             # pattern = ["The most relevant object from the Objects is: <(.+?)>", "<(.+?)>"]
             return response if response in objects else failsafe
@@ -367,13 +368,13 @@ class Scratch:
         )
 
         e_describe = describe.replace("(", "").replace(")", "").replace("<", "").replace(">", "")
-        if e_describe.startswith(subject + "此时"):
-            e_describe = e_describe.replace(subject + "此时", "")
+        if e_describe.startswith(subject + KW_AT_THIS_TIME):
+            e_describe = e_describe.replace(subject + KW_AT_THIS_TIME, "")
         failsafe = Event(
-            subject, "此时", e_describe, describe=describe, address=address, emoji=emoji
+            subject, KW_AT_THIS_TIME, e_describe, describe=describe, address=address, emoji=emoji
         )
         class describe_eventResponse(BaseModel):
-            res: List[Tuple[str, str, str]] = Field(description="动作的三元组列表，每项为 [主语, 谓语, 宾语]")
+            res: List[Tuple[str, str, str]] = Field(description="動作的三元組列表，每項為 [主語, 謂語, 賓語]")
 
         def _callback(response):  
             # response已经是List[Tuple[str, str, str]]类型  
@@ -396,7 +397,7 @@ class Scratch:
         )
 
         class DescribeObjectResponse(BaseModel):
-            res: str = Field(description="物品的状态描述，不超过10个字的短句，不要包含物品名称")
+            res: str = Field(description="物品的狀態描述，不超過10個字的短句，不要包含物品名稱")
 
         def _callback(response):
             response = response.strip()
@@ -405,7 +406,7 @@ class Scratch:
                 response = response[len(obj):].strip()
             return response or failsafe
 
-        failsafe = "空闲"
+        failsafe = KW_IDLE
         return Result(prompt, _callback, failsafe, DescribeObjectResponse)
 
     def prompt_decide_chat(self, agent, other, focus, chats):
@@ -422,7 +423,7 @@ class Scratch:
         date_str = utils.get_timer().get_date("%Y-%m-%d %H:%M:%S")
         chat_history = ""
         if chats:
-            chat_history = f" {agent.name} 和 {other.name} 上次在 {chats[0].create} 聊过关于 {chats[0].describe} 的话题"
+            chat_history = f" {agent.name} 和 {other.name} 上次在 {chats[0].create} 聊過關於 {chats[0].describe} 的話題"
         a_des, o_des = _status_des(agent), _status_des(other)
 
         prompt = self.build_prompt(
@@ -439,12 +440,12 @@ class Scratch:
         )
 
         class decide_chatResponse(BaseModel):
-            res: bool = Field(description="是否主动发起对话，true 表示会主动对话，false 表示不会")
+            res: bool = Field(description="是否主動發起對話，true 表示會主動對話，false 表示不會")
 
         def _callback(response):
             if isinstance(response, bool):
                 return response
-            return str(response).strip().lower() in ("true", "yes", "是", "1")
+            return str(response).strip().lower() in KW_TRUE_TOKENS
 
         failsafe = False
         return Result(prompt, _callback, failsafe, decide_chatResponse)
@@ -452,7 +453,7 @@ class Scratch:
     def prompt_decide_chat_terminate(self, agent, other, chats):
         conversation = "\n".join(["{}: {}".format(n, u) for n, u in chats])
         conversation = (
-            conversation or "[对话尚未开始]"
+            conversation or "[對話尚未開始]"
         )
 
         prompt = self.build_prompt(
@@ -465,12 +466,12 @@ class Scratch:
         )
 
         class decide_chat_terminateResponse(BaseModel):
-            res: bool = Field(description="对话是否已告一段落，true 表示对话结束，false 表示对话仍在继续")
+            res: bool = Field(description="對話是否已告一段落，true 表示對話結束，false 表示對話仍在繼續")
 
         def _callback(response):
             if isinstance(response, bool):
                 return response
-            return str(response).strip().lower() in ("true", "yes", "是", "1")
+            return str(response).strip().lower() in KW_TRUE_TOKENS
 
         failsafe = False
         return Result(prompt, _callback, failsafe, decide_chat_terminateResponse)
@@ -479,31 +480,31 @@ class Scratch:
         example1 = self.build_prompt(
             "decide_wait_example",
             {
-                "context": "简是丽兹的室友。2022-10-25 07:05，简和丽兹互相问候了早上好。",
+                "context": "簡是麗茲的室友。2022-10-25 07:05，簡和麗茲互相問候了早上好。",
                 "date": "2022-10-25 07:09",
-                "agent": "简",
-                "another": "丽兹",
-                "status": "简 正要去浴室",
-                "another_status": "丽兹 已经在 使用浴室",
+                "agent": "簡",
+                "another": "麗茲",
+                "status": "簡 正要去浴室",
+                "another_status": "麗茲 已經在 使用浴室",
                 "action": "使用浴室",
                 "another_action": "使用浴室",
-                "reason": "推理：简和丽兹都想用浴室。简和丽兹同时使用浴室会很奇怪。所以，既然丽兹已经在用浴室了，对简来说最好的选择就是等着用浴室。\n",
-                "answer": "答案：<选项A>",
+                "reason": "推理：簡和麗茲都想用浴室。簡和麗茲同時使用浴室會很奇怪。所以，既然麗茲已經在用浴室了，對簡來說最好的選擇就是等著用浴室。\n",
+                "answer": "答案：<選項A>",
             }
         )
         example2 = self.build_prompt(
             "decide_wait_example",
             {
-                "context": "山姆是莎拉的朋友。2022-10-24 23:00，山姆和莎拉就最喜欢的电影进行了交谈。",
+                "context": "山姆是莎拉的朋友。2022-10-24 23:00，山姆和莎拉就最喜歡的電影進行了交談。",
                 "date": "2022-10-25 12:40",
                 "agent": "山姆",
                 "another": "莎拉",
-                "status": "山姆 正要去吃午饭",
-                "another_status": "莎拉 已经在 洗衣服",
-                "action": "吃午饭",
+                "status": "山姆 正要去吃午飯",
+                "another_status": "莎拉 已經在 洗衣服",
+                "action": "吃午飯",
                 "another_action": "洗衣服",
-                "reason": "推理：山姆可能会在餐厅吃午饭。莎拉可能会去洗衣房洗衣服。由于山姆和莎拉需要使用不同的区域，他们的行为并不冲突。所以，由于山姆和莎拉将在不同的区域，山姆现在继续吃午饭。\n",
-                "answer": "答案：<选项B>",
+                "reason": "推理：山姆可能會在餐廳吃午飯。莎拉可能會去洗衣房洗衣服。由於山姆和莎拉需要使用不同的區域，他們的行為並不衝突。所以，由於山姆和莎拉將在不同的區域，山姆現在繼續吃午飯。\n",
+                "answer": "答案：<選項B>",
             }
         )
 
@@ -512,7 +513,7 @@ class Scratch:
             if event.address:
                 loc = " 在 {} 的 {}".format(event.address[-2], event.address[-1])
             if not a.path:
-                return f"{a.name} 已经在 {event.get_describe(False)}{loc}"
+                return f"{a.name} 已經在 {event.get_describe(False)}{loc}"
             return f"{a.name} 正要去 {event.get_describe(False)}{loc}"
 
         context = ". ".join(
@@ -546,7 +547,7 @@ class Scratch:
         )
 
         class decide_waitResponse(BaseModel):
-            res: str = Field(description="选择的选项，'A' 表示等待，'B' 表示继续当前行动")
+            res: str = Field(description="選擇的選項，'A' 表示等待，'B' 表示繼續當前行動")
 
         def _callback(response):
             return "A" in response
@@ -565,9 +566,9 @@ class Scratch:
                 "another": other_name,
             }
         )
-        failsafe = agent.name + " 正在看着 " + other_name
+        failsafe = agent.name + " 正在看著 " + other_name
         class summarize_relationResponse(BaseModel):
-            res: str = Field(description="一句话描述两人之间的关系，以第三人称表述")
+            res: str = Field(description="一句話描述兩人之間的關係，以第三人稱表述")
 
         def _callback(response):
             return response.strip() or failsafe
@@ -586,7 +587,7 @@ class Scratch:
             delta = utils.get_timer().get_delta(n.create)
             if delta > 480:
                 continue
-            pass_context += f"{delta} 分钟前，{agent.name} 和 {other.name} 进行过对话。{n.describe}\n"
+            pass_context += f"{delta} 分鐘前，{agent.name} 和 {other.name} 進行過對話。{n.describe}\n"
 
         address = agent.get_tile().get_address()
         if len(pass_context) > 0:
@@ -594,12 +595,12 @@ class Scratch:
         else:
             prev_context = ""
         curr_context = (
-            f"{agent.name} {agent.get_event().get_describe(False)} 时，看到 {other.name} {other.get_event().get_describe(False)}。"
+            f"{agent.name} {agent.get_event().get_describe(False)} 時，看到 {other.name} {other.get_event().get_describe(False)}。"
         )
 
         conversation = "\n".join(["{}: {}".format(n, u) for n, u in chats])
         conversation = (
-            conversation or "[对话尚未开始]"
+            conversation or "[對話尚未開始]"
         )
 
         prompt = self.build_prompt(
@@ -618,7 +619,7 @@ class Scratch:
         )
 
         class generate_chat(BaseModel):
-            res: str = Field(description="角色说出的对话内容，1到3句话")
+            res: str = Field(description="角色說出的對話內容，1到3句話")
 
         def _callback(response):
             response = response.strip()
@@ -633,11 +634,11 @@ class Scratch:
     def prompt_generate_chat_check_repeat(self, agent, chats, content):
         conversation = "\n".join(["{}: {}".format(n, u) for n, u in chats])
         conversation = (
-                conversation or "[对话尚未开始]"
+                conversation or "[對話尚未開始]"
         )
 
         class generate_chat_check_repeatResponse(BaseModel):
-            res: bool = Field(description="新对话内容是否与历史记录重复，true 表示重复，false 表示不重复")
+            res: bool = Field(description="新對話內容是否與歷史記錄重複，true 表示重複，false 表示不重複")
 
         prompt = self.build_prompt(
             "generate_chat_check_repeat",
@@ -651,7 +652,7 @@ class Scratch:
         def _callback(response):
             if isinstance(response, bool):
                 return response
-            return str(response).strip().lower() in ("true", "yes", "是", "1")
+            return str(response).strip().lower() in KW_TRUE_TOKENS
 
         failsafe = False
         return Result(prompt, _callback, failsafe, generate_chat_check_repeatResponse)
@@ -667,15 +668,15 @@ class Scratch:
         )
 
         class summarize_chatsResponse(BaseModel):
-            res: str = Field(description="对话内容的简短摘要，一句话概括对话主题")
+            res: str = Field(description="對話內容的簡短摘要，一句話概括對話主題")
 
         def _callback(response):
             return response.strip()
 
         if len(chats) > 1:
-            failsafe = "{} 和 {} 之间的普通对话".format(chats[0][0], chats[1][0])
+            failsafe = "{} 和 {} 之間的普通對話".format(chats[0][0], chats[1][0])
         else:
-            failsafe = "{} 说的话没有得到回应".format(chats[0][0])
+            failsafe = "{} 說的話沒有得到回應".format(chats[0][0])
 
         return Result(prompt, _callback, failsafe, summarize_chatsResponse)
 
@@ -689,16 +690,16 @@ class Scratch:
         )
 
         class reflect_focusResponse(BaseModel):
-            res: List[str] = Field(description="需要深入思考的问题列表，每项为一个问题")
+            res: List[str] = Field(description="需要深入思考的問題列表，每項為一個問題")
 
         def _callback(response):
             assert len(response) >= 1, "reflect_focus: empty list"
             return response
 
         failsafe = [
-                "{} 是谁？".format(self.name),
-                "{} 住在哪里？".format(self.name),
-                "{} 今天要做什么？".format(self.name),
+                "{} 是誰？".format(self.name),
+                "{} 住在哪裡？".format(self.name),
+                "{} 今天要做什麼？".format(self.name),
             ]
         return Result(prompt, _callback, failsafe, reflect_focusResponse)
 
@@ -712,7 +713,7 @@ class Scratch:
         )
 
         class reflect_insightsResponse(BaseModel):
-            res: List[Tuple[str, str]] = Field(description="洞察列表，每项为 [洞察内容, 相关节点索引的逗号分隔字符串如'1,2,3'] 的元组")
+            res: List[Tuple[str, str]] = Field(description="洞察列表，每項為 [洞察內容, 相關節點索引的逗號分隔字符串如'1,2,3'] 的元組")
 
         def _callback(response):  
             insights = []  
@@ -725,7 +726,7 @@ class Scratch:
 
         failsafe = [
                 [
-                    "{} 在考虑下一步该做什么".format(self.name),
+                    "{} 在考慮下一步該做什麼".format(self.name),
                     [nodes[0].node_id],
                 ]
             ]
@@ -743,12 +744,12 @@ class Scratch:
         )
 
         class reflect_chat_planingResponse(BaseModel):
-            res: str = Field(description="从对话中提取的对角色计划的影响或启发，一句话描述")
+            res: str = Field(description="從對話中提取的對角色計劃的影響或啟發，一句話描述")
 
         def _callback(response):
             return response.strip() or failsafe
 
-        failsafe = f"{self.name} 进行了一次对话"
+        failsafe = f"{self.name} 進行了一次對話"
         return Result(prompt, _callback, failsafe, reflect_chat_planingResponse)
 
     def prompt_reflect_chat_memory(self, chats):
@@ -762,12 +763,12 @@ class Scratch:
             }
         )
         class reflect_chat_memoryResponse(BaseModel):
-            res: str = Field(description="从对话中提取的值得记忆的内容，一句话描述")
+            res: str = Field(description="從對話中提取的值得記憶的內容，一句話描述")
 
         def _callback(response):
             return response.strip() or failsafe
 
-        failsafe = f"{self.name} 进行了一次对话"
+        failsafe = f"{self.name} 進行了一次對話"
         return Result(prompt, _callback, failsafe, reflect_chat_memoryResponse)
 
     def prompt_retrieve_plan(self, nodes):
@@ -785,7 +786,7 @@ class Scratch:
         )
 
         class retrieve_planResponse(BaseModel):
-            res: List[str] = Field(description="从记忆中检索出的相关计划列表，每项为一条计划描述")
+            res: List[str] = Field(description="從記憶中檢索出的相關計劃列表，每項為一條計劃描述")
 
         def _callback(response):
             assert len(response) >= 1, "retrieve_plan: empty list"
@@ -808,12 +809,12 @@ class Scratch:
         )
 
         class retrieve_thoughtResponse(BaseModel):
-            res: str = Field(description="从记忆中检索出的相关思考内容，一句话总结")
+            res: str = Field(description="從記憶中檢索出的相關思考內容，一句話總結")
 
         def _callback(response):
             return response.strip() or failsafe
 
-        failsafe = "{} 应该遵循昨天的日程".format(self.name)
+        failsafe = "{} 應該遵循昨天的日程".format(self.name)
         return Result(prompt, _callback, failsafe, retrieve_thoughtResponse)
 
     def prompt_retrieve_currently(self, plan_note, thought_note):
@@ -834,7 +835,7 @@ class Scratch:
         )
 
         class retrieve_currentlyResponse(BaseModel):
-            res: str = Field(description="角色当前状态的更新描述，基于过去的计划和思考")
+            res: str = Field(description="角色當前狀態的更新描述，基於過去的計劃和思考")
 
         def _callback(response):
             return response.strip() or failsafe
