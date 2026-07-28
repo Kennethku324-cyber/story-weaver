@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/setup/setup.css') }}">
+
+<div id="setup-app">
+  <header class="sw-header">
+    <h1>Story Weaver · 開始新故事</h1>
+    <p class="sw-subtitle">你係編劇。揀角色、設定佢哋、寫低開端——之後佢哋會自己行落去。</p>
+  </header>
+
+  <!-- 步驟指示 -->
+  <nav class="sw-steps" id="sw-steps">
+    <div class="sw-step-tab" data-step="1"><span class="sw-step-num">1</span>揀角色</div>
+    <div class="sw-step-tab" data-step="2"><span class="sw-step-num">2</span>角色設定</div>
+    <div class="sw-step-tab" data-step="3"><span class="sw-step-num">3</span>關係矩陣</div>
+    <div class="sw-step-tab" data-step="4"><span class="sw-step-num">4</span>故事開端</div>
+  </nav>
+
+  <div id="sw-errors" class="sw-errors" style="display:none"></div>
+
+  <!-- 步驟一：模板畫廊 -->
+  <section class="sw-panel" id="sw-panel-1">
+    <div class="sw-progress-row">
+      <div class="sw-progress"><div class="sw-progress-bar" id="sw-pick-bar"></div></div>
+      <span id="sw-pick-count">已揀 0/4（最少 4 個，最多 10 個）</span>
+    </div>
+    <div class="sw-gallery" id="sw-gallery">
+      <p class="sw-loading">載入角色模板中……</p>
+    </div>
+  </section>
+
+  <!-- 步驟二：角色設定卡 -->
+  <section class="sw-panel" id="sw-panel-2" style="display:none">
+    <p class="sw-hint">逐個角色設定。趕時間嘅話，撳「用返模板預設」一鍵補填；日程會沿用模板原本嘅地點名。</p>
+    <div id="sw-char-cards"></div>
+  </section>
+
+  <!-- 步驟三：關係矩陣 -->
+  <section class="sw-panel" id="sw-panel-3" style="display:none">
+    <p class="sw-hint">
+      行對列：<strong>A 對 B</strong> 同 <strong>B 對 A</strong> 係兩格獨立欄位，可以好唔同——呢個係戲劇張力嘅來源。
+      留空嘅格會當 0「陌生」。
+    </p>
+    <div class="sw-matrix-wrap" id="sw-matrix"></div>
+  </section>
+
+  <!-- 步驟四：故事開端 -->
+  <section class="sw-panel" id="sw-panel-4" style="display:none">
+    <div class="sw-field">
+      <label for="sw-story-name">故事名<span class="sw-req">*</span></label>
+      <input type="text" id="sw-story-name" maxlength="50" placeholder="例如：茶餐廳風雲" data-field="story_name">
+    </div>
+    <div class="sw-field">
+      <label for="sw-story-opening">故事開端<span class="sw-req">*</span>（建議 50–300 字）</label>
+      <textarea id="sw-story-opening" rows="6" maxlength="1000" data-field="story_opening"
+        placeholder="例如：年三十晚，阿欣嘅茶餐廳收到拆遷通知，佢決定瞞住啲街坊，但阿強已經收到風……"></textarea>
+      <p class="sw-hint">呢段文字會注入所有角色嘅記憶，成為佢哋共同嘅「今日發生嘅大事」。</p>
+      <p class="sw-charcount"><span id="sw-opening-count">0</span>/1000</p>
+    </div>
+    <p class="sw-estimate" id="sw-estimate"></p>
+  </section>
+
+  <!-- 底部按鈕 -->
+  <footer class="sw-footer">
+    <button type="button" class="sw-btn sw-btn-ghost" id="sw-prev" style="display:none">上一步</button>
+    <button type="button" class="sw-btn sw-btn-primary" id="sw-next" disabled>下一步</button>
+    <button type="button" class="sw-btn sw-btn-primary" id="sw-submit" style="display:none">開始故事</button>
+  </footer>
+
+  <!-- 進度 modal -->
+  <div class="sw-modal-mask" id="sw-progress-modal" style="display:none">
+    <div class="sw-modal">
+      <p id="sw-progress-text">正在為角色安頓住所……寫入記憶……</p>
+    </div>
+  </div>
+</div>
+{% endblock content %}
+
+{% block js_content %}
+<script src="{{ url_for('static', filename='assets/setup/setup.js') }}"></script>
+{% endblock js_content %}

@@ -5,6 +5,7 @@ from flask import Flask, render_template, request
 
 from compress import frames_per_step, file_movement
 from start import personas
+from story_weaver.routes import setup_bp
 
 app = Flask(
     __name__,
@@ -12,6 +13,7 @@ app = Flask(
     static_folder="frontend/static",
     static_url_path="/static",
 )
+app.register_blueprint(setup_bp)
 
 
 @app.route("/", methods=['GET'])
@@ -24,7 +26,15 @@ def index():
     if len(name) > 0:
         compressed_folder = f"results/compressed/{name}"
     else:
-        return f"Invalid name of the simulation: '{name}'"
+        return (
+            "<div style='font-family:sans-serif;max-width:480px;margin:4em auto;text-align:center'>"
+            "<h2>Story Weaver</h2>"
+            "<p>未有揀故事。想開始一個新故事？</p>"
+            "<p><a href='/setup' style='display:inline-block;padding:.7em 1.8em;"
+            "background:#b3541e;color:#fff;border-radius:999px;text-decoration:none;"
+            "font-weight:bold'>開始新故事</a></p>"
+            "</div>"
+        )
 
     replay_file = f"{compressed_folder}/{file_movement}"
     if not os.path.exists(replay_file):

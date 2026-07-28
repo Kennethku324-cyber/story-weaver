@@ -113,7 +113,7 @@ def get_config_from_log(checkpoints_folder):
 
     json_files = list()
     for file_name in files:
-        if file_name.endswith(".json") and file_name != "conversation.json":
+        if file_name.startswith("simulate-") and file_name.endswith(".json"):
             json_files.append(os.path.join(checkpoints_folder, file_name))
 
     if len(json_files) < 1:
