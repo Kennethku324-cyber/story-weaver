@@ -88,7 +88,7 @@
 		// Load tilemap JSON
 		this.load.tilemapTiledJSON("map", "static/assets/village/tilemap/tilemap.json");
 
-		this.load.atlas("atlas", "static/assets/village/agents/伊莎贝拉/texture.png", filename="static/assets/village/agents/sprite.json");
+		this.load.atlas("atlas", "static/assets/village/agents/伊莎貝拉/texture.png", filename="static/assets/village/agents/sprite.json");
 
 		// Load persona atlases
 		for (var p in persona_names) {
@@ -152,7 +152,7 @@
 				y,
 				text,
 				{
-					font: "24px 黑体",
+					font: '24px "PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif',
 					fontWeight: "normal",
 					fill: "#000000",
 					backgroundColor: background,
@@ -173,19 +173,19 @@
 		posY = 20;
 
 		// Add button: play, pause ...
-		buttonPlay = add_text(this, posX, posY, "[运行]", "#ffffcc");
+		buttonPlay = add_text(this, posX, posY, "[運行]", "#ffffcc");
 		buttonPlay.setInteractive();
 		posX += buttonPlay.width + 10;
 
-		buttonPause = add_text(this, posX, posY, " 暂停 ", "#ffffcc");
+		buttonPause = add_text(this, posX, posY, " 暫停 ", "#ffffcc");
 		buttonPause.setInteractive();
 		posX += buttonPause.width + 10;
 
-		buttonShowConversation = add_text(this, posX, posY, "[显示对话]", "#ffffcc");
+		buttonShowConversation = add_text(this, posX, posY, "[顯示對話]", "#ffffcc");
 		buttonShowConversation.setInteractive();
 		posX += buttonShowConversation.width + 10;
 
-		buttonHideConversation = add_text(this, posX, posY, " 隐藏对话 ", "#ffffcc");
+		buttonHideConversation = add_text(this, posX, posY, " 隱藏對話 ", "#ffffcc");
 		buttonHideConversation.setInteractive();
 		posX += buttonHideConversation.width + 10;
 
@@ -278,27 +278,27 @@
 		// Setup play and pause button
 		buttonPlay.on("pointerdown", function() {
 			if (finished) return;
-			buttonPlay.text = "[运行]";
-			buttonPause.text = " 暂停 ";
+			buttonPlay.text = "[運行]";
+			buttonPause.text = " 暫停 ";
 			paused = false;
 		});
 
 		buttonPause.on("pointerdown", function() {
 			if (finished) return;
-			buttonPlay.text = " 运行 ";
-			buttonPause.text = "[暂停]";
+			buttonPlay.text = " 運行 ";
+			buttonPause.text = "[暫停]";
 			paused = true;
 		});
 
 		buttonShowConversation.on("pointerdown", function() {
-			buttonShowConversation.text = "[显示对话]";
-			buttonHideConversation.text = " 隐藏对话 ";
+			buttonShowConversation.text = "[顯示對話]";
+			buttonHideConversation.text = " 隱藏對話 ";
 			textConversation.setVisible(true);
 		});
 
 		buttonHideConversation.on("pointerdown", function() {
-			buttonShowConversation.text = " 显示对话 ";
-			buttonHideConversation.text = "[隐藏对话]";
+			buttonShowConversation.text = " 顯示對話 ";
+			buttonHideConversation.text = "[隱藏對話]";
 			textConversation.setVisible(false);
 		});
 
@@ -338,7 +338,7 @@
 		conversation_key = `${curr_year}${curr_month}${curr_day}-${curr_hour}:${curr_minute}`;
 		conversation_key_text = all_movement["conversation"][conversation_key];
 		if (conversation_key_text && conversation_key_text != "") {
-			textConversation.setText(`\n${conversation_key} 对话记录：\n` + conversation_key_text);
+			textConversation.setText(`\n${conversation_key} 對話記錄：\n` + conversation_key_text);
 		}
 
 		// Moving personas
@@ -418,7 +418,7 @@
 				curr_persona.anims.stop();
 
 				finished = true;
-				buttonPlay.text = "[回放结束]";
+				buttonPlay.text = "[回放結束]";
 				buttonPause.setVisible(false);
 			}
 		}

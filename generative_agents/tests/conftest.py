@@ -25,10 +25,10 @@ TINY_PNG = bytes.fromhex(
 
 # 四個測試模板：唔同住所，避免衝突
 FAKE_TEMPLATES = {
-    "模板甲": ["the Ville", "伊莎贝拉的公寓", "主人房"],
-    "模板乙": ["the Ville", "莫雷诺家族的房子", "空卧室"],
-    "模板丙": ["the Ville", "奥克山学院宿舍", "克劳斯的房间"],
-    "模板丁": ["the Ville", "艺术家共居空间", "海莉的房间"],
+    "模板甲": ["the Ville", "伊莎貝拉的公寓", "主人房"],
+    "模板乙": ["the Ville", "莫雷諾家族的房子", "空卧室"],
+    "模板丙": ["the Ville", "奧克山學院宿舍", "克勞斯的房間"],
+    "模板丁": ["the Ville", "藝術家共居空間", "海莉的房間"],
 }
 
 
@@ -117,28 +117,28 @@ def valid_payload():
                 "display_name": "阿欣",
                 "occupation": "茶餐廳老闆",
                 "personality": "慢熱、念舊",
-                "home": ["the Ville", "伊莎贝拉的公寓", "主人房"],
+                "home": ["the Ville", "伊莎貝拉的公寓", "主人房"],
             },
             {
                 "template_id": "模板乙",
                 "display_name": "阿強",
                 "occupation": "地產經紀",
                 "personality": "口甜舌滑",
-                "home": ["the Ville", "莫雷诺家族的房子", "空卧室"],
+                "home": ["the Ville", "莫雷諾家族的房子", "空卧室"],
             },
             {
                 "template_id": "模板丙",
                 "display_name": "阿珍",
                 "occupation": "護士",
                 "personality": "細心、八卦",
-                "home": ["the Ville", "奥克山学院宿舍", "克劳斯的房间"],
+                "home": ["the Ville", "奧克山學院宿舍", "克勞斯的房間"],
             },
             {
                 "template_id": "模板丁",
                 "display_name": "阿豪",
                 "occupation": "畫家",
                 "personality": "孤僻",
-                "home": ["the Ville", "艺术家共居空间", "海莉的房间"],
+                "home": ["the Ville", "藝術家共居空間", "海莉的房間"],
             },
         ],
         "relationships": [

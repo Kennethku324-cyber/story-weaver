@@ -310,6 +310,31 @@ _opencc_failed = False
 # fallback 替換表快取
 _fallback_table: dict[str, str] | None = None
 
+# 舊字形／異體字 → 香港常用字形（同 scripts/localization/_convert.py 嘅
+# VARIANT_FIX 保持一致，兩邊必須同步修改）。OpenCC s2hk 會產出「牀」「説」
+# 等舊字形，但 maze／keywords／模板全部用常用字形，唔後處理會令
+# determine_object 嘅 exact match 靜默 miss 落 random failsafe。
+VARIANT_FIX = {
+    "牀": "床",
+    "衞": "衛",
+    "啓": "啟",
+    "説": "說",
+    "閲": "閱",
+    "悦": "悅",
+    "脱": "脫",
+    "税": "稅",
+    "兑": "兌",
+    "鋭": "銳",
+    "藴": "蘊",
+}
+
+
+def _apply_variant_fix(text: str) -> str:
+    for variant, common in VARIANT_FIX.items():
+        if variant in text:
+            text = text.replace(variant, common)
+    return text
+
 
 def _get_opencc():
     """惰性初始化 OpenCC('s2hk') 單例；失敗時返回 None（降級 fallback）。"""
@@ -326,12 +351,17 @@ def _get_opencc():
     return _opencc
 
 
-def build_fallback_dict(glossary_path: str = "data/glossary_s2hk.json") -> dict[str, str]:
+def build_fallback_dict(glossary_path: str | None = None) -> dict[str, str]:
     """由機讀 glossary JSON 建立 fallback 替換表。
 
     合併 keywords / place_names / agent_names / vocabulary 四段，
     再疊加內置高頻簡繁字對表。檔案唔存在或解析失敗時返回內置表。
+    預設路徑以 __file__ 相對定位，同 cwd 無關。
     """
+    if glossary_path is None:
+        glossary_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "data", "glossary_s2hk.json"
+        )
     table: dict[str, str] = dict(_FALLBACK_CHARS)
     try:
         if os.path.exists(glossary_path):
@@ -363,10 +393,22 @@ def _fallback_convert(text: str) -> str:
     return "".join(table.get(c, c) for c in text)
 
 
+def _apply_glossary_words(text: str) -> str:
+    """glossary 長詞優先替換（vocabulary override 如「小睡一会儿→小睡片刻」）。
+    主路徑喺 OpenCC 之前行一次，同 build-time _convert.py 行為對齊。"""
+    table = _get_fallback_table()
+    words = sorted((k for k in table if len(k) > 1), key=len, reverse=True)
+    for word in words:
+        if word in text:
+            text = text.replace(word, table[word])
+    return text
+
+
 def normalize_text(text: str) -> str:
     """將字串中嘅簡體中文轉為繁體香港字形（s2hk）。
 
     - 空串／純英文／純數字原樣返回（fast path：無 CJK 字符直接 return）
+    - 主路徑：glossary 長詞 → OpenCC s2hk → VARIANT_FIX 後處理
     - 永不拋異常：任何內部錯誤 log warning 後返回原文
     """
     if not isinstance(text, str) or not text:
@@ -376,8 +418,8 @@ def normalize_text(text: str) -> str:
     try:
         cc = _get_opencc()
         if cc is not None:
-            return cc.convert(text)
-        return _fallback_convert(text)
+            return _apply_variant_fix(cc.convert(_apply_glossary_words(text)))
+        return _apply_variant_fix(_fallback_convert(text))
     except Exception as e:  # noqa: BLE001
         logger.warning("normalize_text 失敗，返回原文: %s", e)
         return text

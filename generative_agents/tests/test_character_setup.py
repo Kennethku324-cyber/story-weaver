@@ -90,13 +90,13 @@ class TestValidate:
         assert any(e.field == "characters[1].home" and "同一間房" in e.message for e in errors)
 
     def test_housing_same_house_different_room_ok(self, builder, valid_payload):
-        valid_payload["characters"][0]["home"] = ["the Ville", "塔玛拉和卡门的家", "卡门的房间"]
-        valid_payload["characters"][1]["home"] = ["the Ville", "塔玛拉和卡门的家", "塔玛拉的房间"]
+        valid_payload["characters"][0]["home"] = ["the Ville", "塔瑪拉和卡門的家", "卡門的房間"]
+        valid_payload["characters"][1]["home"] = ["the Ville", "塔瑪拉和卡門的家", "塔瑪拉的房間"]
         req = SetupCreateRequest.model_validate(valid_payload)
         assert builder.validate(req) == []
 
     def test_home_without_bed_rejected(self, builder, valid_payload):
-        valid_payload["characters"][0]["home"] = ["the Ville", "霍布斯咖啡馆", "咖啡馆"]
+        valid_payload["characters"][0]["home"] = ["the Ville", "霍布斯咖啡館", "咖啡館"]
         req = SetupCreateRequest.model_validate(valid_payload)
         errors = builder.validate(req)
         assert any(e.field == "characters[0].home" for e in errors)
@@ -254,7 +254,7 @@ class TestBuild:
         builder.build(valid_request)
         with open(os.path.join(builder.catalog.agents_root, "阿欣", "agent.json"), encoding="utf-8") as f:
             agent = json.load(f)
-        # 模板原文係簡體（睡觉/咖啡馆/门），生成後必須轉繁體
+        # 模板原文係簡體（睡觉/咖啡館/门），生成後必須轉繁體
         assert "睡覺" in agent["scratch"]["lifestyle"]
         assert "睡觉" not in agent["scratch"]["lifestyle"]
         assert "開門" in agent["scratch"]["daily_plan"] or "开门" not in agent["scratch"]["daily_plan"]
@@ -349,7 +349,7 @@ class TestHousing:
         rooms = housing.rooms()
         assert len(rooms) == 23
         labels = {r.label for r in rooms}
-        assert "莫雷诺家族的房子 · 空卧室" in labels
+        assert "莫雷諾家族的房子 · 空卧室" in labels
 
     def test_assign_conflict_lists_available(self, housing):
         room = housing.available()[0]

@@ -1,8 +1,10 @@
-姓名: ${name}
-年龄：${age}
-先天特质：${innate}
-后天特质：${learned}
-生活习惯：${lifestyle}
-日常计划：${daily_plan}
+姓名：${name}
+年齡：${age}
+先天特質：${innate}
+後天特質：${learned}
+生活習慣：${lifestyle}
+日常計劃：${daily_plan}
 
 今天是 ${date}。${currently}
+
+一律使用繁體中文（香港書面語）回答。

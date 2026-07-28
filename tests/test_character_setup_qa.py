@@ -91,8 +91,8 @@ class TestSetupPageAndGallery:
         rooms = resp.get_json()["rooms"]
         assert len(rooms) == 23
         labels = {r["label"] for r in rooms}
-        assert "莫雷诺家族的房子 · 空卧室" in labels
-        assert "奥克山学院宿舍 · 克劳斯的房间" in labels
+        assert "莫雷諾家族的房子 · 空卧室" in labels
+        assert "奧克山學院宿舍 · 克勞斯的房間" in labels
 
     def test_incomplete_template_unselectable(self, builder, valid_payload):
         """邊界 11：模板缺 texture.png → assets_complete=False + 校驗拒絕。"""
@@ -138,9 +138,9 @@ class TestCharacterCount:
         base = valid_payload["characters"][0]
         extra = []
         extra_homes = [
-            ["the Ville", "艺术家共居空间", arena]
-            for arena in ["亚当斯的房间", "阿比盖尔的房间", "拉吉夫的房间",
-                          "瑞恩的房间", "卡洛斯·莫雷雷诺的房间", "海莉的房间"]
+            ["the Ville", "藝術家共居空間", arena]
+            for arena in ["亞當斯的房間", "阿比蓋爾的房間", "拉吉夫的房間",
+                          "瑞恩的房間", "卡洛斯·莫雷雷諾的房間", "海莉的房間"]
         ]
         for i, home in enumerate(extra_homes):
             c = dict(base)
@@ -151,7 +151,7 @@ class TestCharacterCount:
         SetupCreateRequest.model_validate(valid_payload)
         c = dict(base)
         c["display_name"] = "角色11"
-        c["home"] = ["the Ville", "摩尔家族的房子", "主人房"]
+        c["home"] = ["the Ville", "摩爾家族的房子", "主人房"]
         valid_payload["characters"].append(c)  # 11 個 → 拒絕
         with pytest.raises(ValidationError):
             SetupCreateRequest.model_validate(valid_payload)
@@ -334,14 +334,14 @@ class TestHousing:
 
     def test_same_house_different_room_ok(self, builder, valid_payload):
         """邊界 5：同屋唔同房（宿舍唔同房間）合法。"""
-        valid_payload["characters"][0]["home"] = ["the Ville", "塔玛拉和卡门的家", "卡门的房间"]
-        valid_payload["characters"][1]["home"] = ["the Ville", "塔玛拉和卡门的家", "塔玛拉的房间"]
+        valid_payload["characters"][0]["home"] = ["the Ville", "塔瑪拉和卡門的家", "卡門的房間"]
+        valid_payload["characters"][1]["home"] = ["the Ville", "塔瑪拉和卡門的家", "塔瑪拉的房間"]
         req = SetupCreateRequest.model_validate(valid_payload)
         assert builder.validate(req) == []
 
     def test_room_without_bed_rejected(self, client, valid_payload):
         """邊界 5：廚房/咖啡館（無床）唔住得人。"""
-        valid_payload["characters"][0]["home"] = ["the Ville", "霍布斯咖啡馆", "咖啡馆"]
+        valid_payload["characters"][0]["home"] = ["the Ville", "霍布斯咖啡館", "咖啡館"]
         resp = client.post("/api/setup/create", json=valid_payload)
         assert resp.status_code == 422
         assert any(e["field"] == "characters[0].home" for e in resp.get_json()["errors"])

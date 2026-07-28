@@ -2,10 +2,12 @@
 """
 ${context}
 
-现在是 ${date}。${chat_history}
+現在是 ${date}。${chat_history}
 
 ${agent_status}
 ${another_status}
 """
 
-根据上述背景判断，${agent} 是否有可能主动与 ${another} 对话？只用“是”或“否”回答：
+根據上述背景判斷，${agent} 是否有可能主動與 ${another} 對話？只用“是”或“否”回答：
+
+一律使用繁體中文（香港書面語）回答。

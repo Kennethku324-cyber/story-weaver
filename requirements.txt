@@ -5,4 +5,5 @@ llama-index-embeddings-ollama==0.8.6
 llama-index-embeddings-openai==0.5.1
 Flask==3.1.2
 magentic==0.41.0
-opencc-python-reimplemented
+opencc-python-reimplemented==0.1.7
+

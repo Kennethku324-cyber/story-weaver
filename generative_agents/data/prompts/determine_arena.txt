@@ -1,14 +1,16 @@
-在区域选项中，为当前任务选择一个合适的区域。
+在區域選項中，為當前任務選擇一個合適的區域。
 
-${agent} 正去往 <${target_sector}>，里面有 ${target_arenas}。
+${agent} 正去往 <${target_sector}>，裏面有 ${target_arenas}。
 ${daily_plan}
-问题：
-${agent} 正在 ${complete_plan}。为了 ${decomposed_plan}，${agent} 应该去 ${target_sector} 里面的哪个区域？
+問題：
+${agent} 正在 ${complete_plan}。為了 ${decomposed_plan}，${agent} 應該去 ${target_sector} 裏面的哪個區域？
 
 要求：
-1. 必须在这个列表中选择一个区域，列表：[${target_arenas}]。
-2. 如果现在正位于列表中的区域，并且计划的活动可以在这里进行，最好留在当前区域。
-3. 不要选择列表以外的区域。
-4. 直接输出选中的结果。
+1. 必須在這個列表中選擇一個區域，列表：[${target_arenas}]。
+2. 如果現在正位於列表中的區域，並且計劃的活動可以在這裏進行，最好留在當前區域。
+3. 不要選擇列表以外的區域。
+4. 直接輸出選中的結果。
 
-${agent} 应该去：
+${agent} 應該去：
+
+一律使用繁體中文（香港書面語）回答。

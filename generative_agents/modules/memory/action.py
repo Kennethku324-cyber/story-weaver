@@ -22,7 +22,7 @@ class Action:
 
     def abstract(self):
         status = "{} [{}~{}]".format(
-            "已完成" if self.finished() else "进行中",
+            "已完成" if self.finished() else "進行中",
             self.start.strftime("%Y%m%d-%H:%M"),
             self.end.strftime("%Y%m%d-%H:%M"),
         )
