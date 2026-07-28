@@ -43,6 +43,17 @@ class Scratch:
             }
         )
 
+    # [story-weaver:affinity] 結構化好感度一句描述；Game 未建立或任何異常返回 ""
+    def _relation_line(self, a_name: str, b_name: str) -> str:  # [story-weaver:affinity]
+        try:  # [story-weaver:affinity]
+            from modules.game import get_game  # [story-weaver:affinity] lazy import，避免 circular import
+            game = get_game()  # [story-weaver:affinity]
+            if game is not None and getattr(game, "affinity", None) is not None:  # [story-weaver:affinity]
+                return game.affinity.relation_line(a_name, b_name)  # [story-weaver:affinity]
+        except Exception:  # [story-weaver:affinity]
+            pass  # [story-weaver:affinity]
+        return ""  # [story-weaver:affinity]
+
     def prompt_poignancy_event(self, event):
         prompt = self.build_prompt(
             "poignancy_event",
@@ -436,6 +447,7 @@ class Scratch:
                 "another_status": o_des,
                 "agent": agent.name,
                 "another": other.name,
+                "relation_line": self._relation_line(agent.name, other.name),  # [story-weaver:affinity]
             }
         )
 
@@ -490,6 +502,7 @@ class Scratch:
                 "another_action": "使用浴室",
                 "reason": "推理：簡和麗茲都想用浴室。簡和麗茲同時使用浴室會很奇怪。所以，既然麗茲已經在用浴室了，對簡來說最好的選擇就是等著用浴室。\n",
                 "answer": "答案：<選項A>",
+                "relation_line": "「簡對麗茲的好感度為50（友好）：室友，相處融洽。」",  # [story-weaver:affinity]
             }
         )
         example2 = self.build_prompt(
@@ -505,6 +518,7 @@ class Scratch:
                 "another_action": "洗衣服",
                 "reason": "推理：山姆可能會在餐廳吃午飯。莎拉可能會去洗衣房洗衣服。由於山姆和莎拉需要使用不同的區域，他們的行為並不衝突。所以，由於山姆和莎拉將在不同的區域，山姆現在繼續吃午飯。\n",
                 "answer": "答案：<選項B>",
+                "relation_line": "「山姆與莎拉並不相識（陌生/中立）。」",  # [story-weaver:affinity]
             }
         )
 
@@ -534,6 +548,7 @@ class Scratch:
                 "another_action": other.get_event().get_describe(False),
                 "reason": "",
                 "answer": "",
+                "relation_line": self._relation_line(agent.name, other.name),  # [story-weaver:affinity]
             }
         )
 
@@ -564,6 +579,7 @@ class Scratch:
                 "context": "\n".join(["{}. {}".format(idx, n.describe) for idx, n in enumerate(nodes)]),
                 "agent": agent.name,
                 "another": other_name,
+                "relation_line": self._relation_line(agent.name, other_name),  # [story-weaver:affinity]
             }
         )
         failsafe = agent.name + " 正在看著 " + other_name
@@ -615,6 +631,7 @@ class Scratch:
                 "current_context": curr_context,
                 "another": other.name,
                 "conversation": conversation,
+                "relation_line": self._relation_line(agent.name, other.name),  # [story-weaver:affinity]
             }
         )
 

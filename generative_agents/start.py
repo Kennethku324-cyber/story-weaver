@@ -89,6 +89,9 @@ class SimulateServer:
             a.think_config["interval"] for a in self.game.agents.values()
         )
         self.start_step = start_step
+        # [story-weaver:affinity] GM 回合尾掛鉤（由 GM 系統注入）；預設 6 step 一回合
+        self.gm_hook = None  # [story-weaver:affinity]
+        self.steps_per_round = max(1, config.get("steps_per_round", 6))  # [story-weaver:affinity]
 
     def simulate(self, step, stride=0):
         timer = utils.get_timer()
@@ -121,6 +124,11 @@ class SimulateServer:
             # 保存对话数据
             with open(f"{self.checkpoints_folder}/conversation.json", "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.game.conversation, indent=2, ensure_ascii=False))
+
+            # [story-weaver:affinity] 回合尾掛鉤：GM 系統經 apply_gm_response 調整好感度；
+            # 本系統保證 apply_gm_response 任何異常都唔會 throw 上嚟（內部 try/except + failsafe）
+            if self.gm_hook is not None and (i + 1) % self.steps_per_round == 0:  # [story-weaver:affinity]
+                self.gm_hook(self.game, i + 1)  # [story-weaver:affinity]
 
             if stride > 0:
                 timer.forward(stride)
@@ -157,7 +165,8 @@ def get_config_from_log(checkpoints_folder):
 
 
 # 为新游戏创建配置
-def get_config(start_time="20240213-09:30", stride=15, agents=None):
+def get_config(start_time="20240213-09:30", stride=15, agents=None,
+               affinity=None):  # [story-weaver:affinity]
     with open("data/config.json", "r", encoding="utf-8") as f:
         json_data = json.load(f)
         agent_config = json_data["agent"]
@@ -169,6 +178,9 @@ def get_config(start_time="20240213-09:30", stride=15, agents=None):
         "maze": {"path": os.path.join(assets_root, "maze.json")},
         "agent_base": agent_config,
         "agents": {},
+        "affinity": affinity or {},  # [story-weaver:affinity] Setup 校驗後嘅矩陣
+        "affinity_rounds": [],  # [story-weaver:affinity] 變動歷史
+        "affinity_meta": {},  # [story-weaver:affinity] 冧等標記等
     }
     for a in agents:
         config["agents"][a] = {

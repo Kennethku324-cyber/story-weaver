@@ -6,6 +6,7 @@ from flask import Flask, render_template, request
 from compress import frames_per_step, file_movement
 from start import personas
 from story_weaver.routes import setup_bp
+from story_weaver.affinity.api import affinity_bp  # [story-weaver:affinity]
 
 app = Flask(
     __name__,
@@ -14,6 +15,7 @@ app = Flask(
     static_url_path="/static",
 )
 app.register_blueprint(setup_bp)
+app.register_blueprint(affinity_bp)  # [story-weaver:affinity]
 
 
 @app.route("/", methods=['GET'])

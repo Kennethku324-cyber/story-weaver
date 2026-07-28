@@ -393,12 +393,19 @@ class StoryBuilder:
                 # 唔會覆蓋呢個 block，GM 改咗會隨下一步落盤
                 "relationships": copy.deepcopy(rel_map.get(char.display_name, {})),
             }
+        # [story-weaver:affinity] 由已 clamp/補齊嘅 rel_map 經 validate_setup 產生頂層 affinity 矩陣
+        from .affinity import build_matrix_from_setup  # [story-weaver:affinity]
+        affinity_matrix = build_matrix_from_setup(  # [story-weaver:affinity]
+            [c.display_name for c in req.characters], rel_map)  # [story-weaver:affinity]
         return {
             "stride": DEFAULT_STRIDE,
             "time": {"start": DEFAULT_TIME_START},
             "maze": {"path": os.path.join("assets", "village", "maze.json")},
             "agent_base": agent_base,
             "agents": agents,
+            "affinity": affinity_matrix,  # [story-weaver:affinity]
+            "affinity_rounds": [],  # [story-weaver:affinity]
+            "affinity_meta": {},  # [story-weaver:affinity]
         }
 
     def _suggest_story_name(self, story_name: str) -> str:

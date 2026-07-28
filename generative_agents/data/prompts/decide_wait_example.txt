@@ -1,6 +1,7 @@
 背景：
 """
 ${context}
+${relation_line}
 現在是 ${date}
 ${status}
 ${agent} 看到 ${another_status}

@@ -539,6 +539,11 @@ class Agent:
             self.completion("summarize_relation", self, other.name),
             other.completion("summarize_relation", other, self.name),
         ]
+        # [story-weaver:affinity] prepend 結構化好感度錨點（LLM 總結保留做記憶細節）
+        _aff = getattr(self, "affinity", None)  # [story-weaver:affinity]
+        if _aff is not None:  # [story-weaver:affinity]
+            relations[0] = _aff.relation_line(self.name, other.name) + relations[0]  # [story-weaver:affinity]
+            relations[1] = _aff.relation_line(other.name, self.name) + relations[1]  # [story-weaver:affinity]
 
         for i in range(self.chat_iter):
             text = self.completion(
@@ -646,8 +651,11 @@ class Agent:
         create=None,
         expire=None,
         filling=None,
+        poignancy_override=None,  # [story-weaver:affinity]
     ):
-        if event.fit(None, "is", "idle"):
+        if poignancy_override is not None:  # [story-weaver:affinity] 跳過 LLM poignancy 評分
+            poignancy = int(poignancy_override)  # [story-weaver:affinity]
+        elif event.fit(None, "is", "idle"):
             poignancy = 1
         elif event.fit(None, KW_AT_THIS_TIME, KW_IDLE):
             poignancy = 1

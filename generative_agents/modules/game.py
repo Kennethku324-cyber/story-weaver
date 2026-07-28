@@ -36,6 +36,14 @@ class Game:
             agent_config["storage_root"] = os.path.join(storage_root, name)
             self.agents[name] = Agent(agent_config, self.maze, self.conversation, self.logger)
 
+        # [story-weaver:affinity] 共享 config dict 引用，每 step dump checkpoint 自動同步
+        self._config = config  # [story-weaver:affinity]
+        from story_weaver.affinity import AffinityStore  # [story-weaver:affinity]
+        self.affinity = AffinityStore(config.setdefault("affinity", {}), list(self.agents.keys()))  # [story-weaver:affinity]
+        for _a in self.agents.values():  # [story-weaver:affinity]
+            _a.affinity = self.affinity  # [story-weaver:affinity] 俾 agent._chat_with 用
+        self.affinity_rounds = config.setdefault("affinity_rounds", [])  # [story-weaver:affinity]
+
     def get_agent(self, name):
         return self.agents[name]
 
@@ -77,6 +85,9 @@ class Game:
             agent.reset()
             title = "{}.reset".format(a_name)
             self.logger.info("\n{}\n{}\n".format(utils.split_line(title), agent))
+        # [story-weaver:affinity] agent.reset() 之後 LLM/embedding 先 ready，依家先注入初始關係記憶
+        from story_weaver.affinity.memory import inject_initial  # [story-weaver:affinity]
+        inject_initial(self.affinity, self.agents, self._config.setdefault("affinity_meta", {}), self.logger)  # [story-weaver:affinity]
 
 
 def create_game(name, static_root, config, conversation, logger=None):
