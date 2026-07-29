@@ -56,6 +56,11 @@
       <input type="number" id="pace-chat-iter" min="1" max="8" style="width:120px">
       <div class="key-hint">每場對話最多嘅你一言我一語回合數。4 = 傾得詳細但慢；2 = 短啲但快好多。</div>
     </div>
+    <div class="llm-field">
+      <label>總回合數（2-50）</label>
+      <input type="number" id="pace-max-rounds" min="2" max="50" style="width:120px">
+      <div class="key-hint">故事行到呢個回合數就完結，LLM 會喺最後一回合生成劇情結局。</div>
+    </div>
   </div>
 
   <button class="btn btn-primary" id="btn-save" style="padding:.6em 2em">儲存全部設定</button>
@@ -134,6 +139,7 @@
     var payload = { pace: {
       steps_per_round: parseInt(document.getElementById("pace-steps").value, 10),
       chat_iter: parseInt(document.getElementById("pace-chat-iter").value, 10),
+      max_rounds: parseInt(document.getElementById("pace-max-rounds").value, 10),
     } };
     SECTIONS.forEach(function (s) { payload[s] = gather(s); });
     var box = document.getElementById("save-result");
@@ -155,6 +161,7 @@
     if (body.pace) {
       document.getElementById("pace-steps").value = body.pace.steps_per_round;
       document.getElementById("pace-chat-iter").value = body.pace.chat_iter;
+      document.getElementById("pace-max-rounds").value = body.pace.max_rounds;
     }
   });
 })();

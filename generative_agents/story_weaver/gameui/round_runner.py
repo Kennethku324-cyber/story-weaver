@@ -168,6 +168,17 @@ class RoundRunner:
             pass
         return self.store.load().steps_per_round
 
+    def max_rounds(self) -> int:
+        """總回合數：gm_config.json 優先（即改即生效），fallback 返 state 預設。"""
+        try:
+            cfg = load_gm_config()
+            value = int(cfg.get("max_rounds", 0))
+            if 2 <= value <= 50:
+                return value
+        except Exception:
+            pass
+        return self.store.load().max_rounds
+
     def _get_recap(self) -> RecapService | None:
         if self._recap is None:
             try:
@@ -398,7 +409,7 @@ class RoundRunner:
             except Exception:
                 logger.warning("round_runner: recap 記錄決策失敗", exc_info=True)
 
-        finished = choice.type == "finish" or (round_no >= state.max_rounds)
+        finished = choice.type == "finish" or (round_no >= self.max_rounds())
         with self.store.mutate() as s:
             s.round = round_no
             s.status = UIStatus.FINISHED if finished else UIStatus.IDLE

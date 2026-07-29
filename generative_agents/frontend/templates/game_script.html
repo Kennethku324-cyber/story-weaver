@@ -8,7 +8,7 @@
 	if (zoom <= 0) zoom = document.documentElement.clientWidth / 4400;
 
 	let tile_width = 32;
-	let movement_speed = 0.5;   // 慢放：1 個 sim step（60 帧）播 ~64 秒，同步推演實際速度，
+	let movement_speed = 0.5;   // 慢放：1 個 sim step（60 幀）播 ~64 秒，同步推演實際速度，
 	                            // 等行路動畫填滿 checkpoint 之間嘅等待（之前 2.0 播 16 秒就企定）
 	let execute_count_max = tile_width / movement_speed;
 	let execute_count = execute_count_max;

@@ -284,7 +284,7 @@ def create_app() -> Flask:
         return jsonify({
             "status": state.status.value,
             "round": state.round,
-            "max_rounds": state.max_rounds,
+            "max_rounds": runner.max_rounds(),
             "sim_time": sim_time,
             "sim_step_cursor": state.sim_step_cursor,
             "new_frames": runner.frames.frames_since(since_frame),

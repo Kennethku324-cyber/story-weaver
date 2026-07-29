@@ -62,6 +62,7 @@ def load_settings() -> dict:
         "pace": {
             "steps_per_round": int(gm_config.get("steps_per_round", 6)),
             "chat_iter": int(((config.get("agent") or {}).get("chat_iter")) or 4),
+            "max_rounds": int(gm_config.get("max_rounds", 10)),
         },
     }
 
@@ -100,12 +101,19 @@ def save_settings(payload: dict) -> list[str]:
                 raise ValueError
         except (TypeError, ValueError):
             errors.append("對話長度必須係 1-8 嘅整數")
+        try:
+            max_rounds = int(pace.get("max_rounds", 0))
+            if not 2 <= max_rounds <= 50:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append("總回合數必須係 2-50 嘅整數")
     if errors:
         return errors
 
     if pace is not None:
         gm_pace = _read_json(GM_CONFIG_PATH)
         gm_pace["steps_per_round"] = int(pace["steps_per_round"])
+        gm_pace["max_rounds"] = int(pace["max_rounds"])
         _write_json_atomic(GM_CONFIG_PATH, gm_pace)
         cfg_pace = _read_json(CONFIG_PATH)
         cfg_pace.setdefault("agent", {})["chat_iter"] = int(pace["chat_iter"])

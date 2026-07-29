@@ -52,10 +52,11 @@ def cfg_files(tmp_path, monkeypatch):
 def test_pace_roundtrip(cfg_files):
     s = llm_settings.load_settings()
     assert s["pace"]["steps_per_round"] == 6
-    errors = llm_settings.save_settings({"pace": {"steps_per_round": 4, "chat_iter": 2}})
+    errors = llm_settings.save_settings({"pace": {"steps_per_round": 4, "chat_iter": 2, "max_rounds": 5}})
     assert errors == []
     assert llm_settings.load_settings()["pace"]["steps_per_round"] == 4
     assert llm_settings.load_settings()["pace"]["chat_iter"] == 2
+    assert llm_settings.load_settings()["pace"]["max_rounds"] == 5
 
 
 def test_pace_validation(cfg_files):
@@ -63,4 +64,6 @@ def test_pace_validation(cfg_files):
     assert errors and "1-20" in errors[0]
     errors = llm_settings.save_settings({"pace": {"steps_per_round": 4, "chat_iter": 99}})
     assert errors and "1-8" in errors[0]
+    errors = llm_settings.save_settings({"pace": {"steps_per_round": 4, "chat_iter": 2, "max_rounds": 1}})
+    assert errors and "2-50" in errors[0]
     assert llm_settings.load_settings()["pace"]["steps_per_round"] == 6  # 無寫到

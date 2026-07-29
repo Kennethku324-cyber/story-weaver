@@ -395,3 +395,33 @@ def test_compress_ignores_metadata_json(tmp_path, monkeypatch):
         assert "61" in result["all_movement"]  # 第 2 個 step 嘅 frame
     finally:
         shutil.rmtree(agent_dir, ignore_errors=True)
+
+
+def test_max_rounds_auto_finale(tmp_path, monkeypatch):
+    """行到總回合數 → 自動 FINISHED + LLM 生成結局。"""
+    from story_weaver.gameui import round_runner as rr_mod
+
+    monkeypatch.setattr(
+        rr_mod, "load_gm_config",
+        lambda *a, **k: {"steps_per_round": 1, "max_rounds": 2, "option_poignancy": 8,
+                         "custom_poignancy": 10, "poignancy_boost": 20,
+                         "min_rounds_to_finish": 2},
+    )
+    runner, server, gm = make_runner(tmp_path)
+    with runner.store.mutate() as s:
+        s.steps_per_round = 1
+    # Round 1
+    runner.start_round()
+    assert wait_status(runner, UIStatus.WAITING_DECISION)
+    runner.apply_decision(PlayerChoice(type="skip"))
+    # Round 2 = 最後一回合
+    runner.start_round()
+    assert wait_status(runner, UIStatus.WAITING_DECISION)
+    report, new_status = runner.apply_decision(PlayerChoice(type="skip"))
+    assert new_status == UIStatus.FINISHED
+    finale = gm.state.get_finale()
+    assert finale is not None
+    assert "句號" in finale.narrative.ending
+    # 完結後唔可以再開回合
+    with pytest.raises(RoundBusyError, match="故事已完結"):
+        runner.start_round()
