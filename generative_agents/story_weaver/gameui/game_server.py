@@ -199,6 +199,13 @@ def create_app() -> Flask:
         sim_time, agents_meta, affinity = runner.latest_agents_meta()
         readonly = _is_readonly(state, client_id)
 
+        # 即場掃新 checkpoint（角色即時郁）+ 觸發劇情旁白
+        feed_before = runner.frames.feed_latest
+        runner.poll_scan()
+        new_feed_items = runner.frames.feed_since(since_feed)
+        if state.status == UIStatus.SIMULATING:
+            runner.maybe_narrate(runner.frames.feed_since(feed_before))
+
         pending = None
         if state.status == UIStatus.WAITING_DECISION:
             decision = runner._get_gm().get_pending_decision()
@@ -219,7 +226,7 @@ def create_app() -> Flask:
             "sim_step_cursor": state.sim_step_cursor,
             "new_frames": runner.frames.frames_since(since_frame),
             "frame_latest": runner.frames.latest_frame_key(),
-            "new_feed": [f.model_dump(mode="json") for f in runner.frames.feed_since(since_feed)],
+            "new_feed": [f.model_dump(mode="json") for f in new_feed_items],
             "feed_latest": runner.frames.feed_latest,
             "agents_meta": agents_meta,
             "pending_decision": pending,

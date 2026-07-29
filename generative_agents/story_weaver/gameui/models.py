@@ -26,6 +26,7 @@ class FeedKind(str, Enum):
     EVENT = "event"
     CHAT = "chat"
     SYSTEM = "system"  # 「命令已送達」「GM 調整好感」等系統訊息
+    NARRATIVE = "narrative"  # 即時劇情旁白（說書人口吻）
 
 
 class DialogueLine(BaseModel):

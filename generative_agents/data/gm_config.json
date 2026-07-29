@@ -1,13 +1,14 @@
 {
   "llm": {
     "provider": "openai",
-    "model": "qwen3:4b-instruct-2507",
-    "base_url": "http://localhost:11434/v1",
-    "api_key": "ollama"
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com",
+    "api_key": "sk-8d4fe0edfa9d4003a7add6205bb92c08"
   },
   "option_poignancy": 8,
   "custom_poignancy": 10,
   "poignancy_boost": 20,
   "max_rounds": 10,
-  "min_rounds_to_finish": 2
+  "min_rounds_to_finish": 2,
+  "steps_per_round": 4
 }

@@ -17,6 +17,8 @@
   .feed-chat { margin-bottom: .6em; background: #fff; border-left: 3px solid #b3541e;
                padding: .3em .6em; }
   .feed-system { margin-bottom: .4em; color: #0b5ed7; font-style: italic; }
+  .feed-narrative { margin-bottom: .6em; background: #fdf3ec; border-left: 3px solid #b3541e;
+                    padding: .4em .7em; font-size: 14px; line-height: 1.5; }
   .feed-time { color: #999; margin-right: .4em; }
   #affinity-panel table { font-size: 13px; width: 100%; }
   .option-card { border: 2px solid #ddd; border-radius: 8px; padding: .8em 1em;
@@ -78,7 +80,7 @@
   </div>
 
   <div class="col-md-4" style="padding:.4em">
-    <h5><b>小鎮動態</b></h5>
+    <h5><b>故事情節</b></h5>
     <div id="feed"></div>
     <h5 style="margin-top:1em"><b>好感度</b></h5>
     <div id="affinity-panel"><table class="table table-condensed"><tbody id="affinity-body"></tbody></table></div>
@@ -217,6 +219,8 @@ function appendFeed(items) {
       html = $('<div class="feed-chat">').append(time,
         $('<div>').text("【" + (it.location || "") + "】"),
         ...(it.dialogue || []).map(d => $('<div>').text(d.speaker + "：「" + d.line + "」")));
+    } else if (it.kind === "narrative") {
+      html = $('<div class="feed-narrative">').append(time, $('<span>').text("📖 " + it.text));
     } else if (it.kind === "system") {
       html = $('<div class="feed-system">').append(time, $('<span>').text(it.text));
     } else {

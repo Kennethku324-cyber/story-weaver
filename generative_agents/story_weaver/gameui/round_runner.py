@@ -91,6 +91,8 @@ class RoundRunner:
         self._server = None
         self._server_factory = server_factory  # 測試注入用
         self._thread: threading.Thread | None = None
+        self._narrator = None
+        self._narrating = False  # 同一時間最多一個旁白 thread
 
     # ---------------------------------------------------------------- 懶加載
 
@@ -136,6 +138,34 @@ class RoundRunner:
                 gm_config=gm_config,
             )
         return self._gm
+
+    def _get_narrator(self):
+        """即時劇情旁白（用 GM 嘅 LLM 配置，獨立實例）。"""
+        if self._narrator is None:
+            try:
+                from modules.model.llm_model import create_llm_model
+
+                from .narrator import StepNarrator
+
+                llm = create_llm_model(load_gm_config().get("llm", {}))
+                self._narrator = StepNarrator(llm)
+            except Exception:
+                logger.warning("round_runner: narrator 初始化失敗，旁白停用", exc_info=True)
+                from .narrator import StepNarrator
+
+                self._narrator = StepNarrator(None)
+        return self._narrator
+
+    def steps_per_round(self) -> int:
+        """每回合步數：gm_config.json 優先（即改即生效），fallback 返 state 預設。"""
+        try:
+            cfg = load_gm_config()
+            value = int(cfg.get("steps_per_round", 0))
+            if 1 <= value <= 20:
+                return value
+        except Exception:
+            pass
+        return self.store.load().steps_per_round
 
     def _get_recap(self) -> RecapService | None:
         if self._recap is None:
@@ -228,9 +258,10 @@ class RoundRunner:
 
     def _run_round(self, server, round_no: int) -> None:
         try:
+            steps = self.steps_per_round()
             state = self.store.load()
-            server.simulate(state.steps_per_round, state.stride)
-            self._on_round_complete(server, round_no)
+            server.simulate(steps, state.stride)
+            self._on_round_complete(server, round_no, steps)
         except Exception as e:
             logger.exception("round_runner: 回合 %d 推演失敗", round_no)
             try:
@@ -242,8 +273,9 @@ class RoundRunner:
         finally:
             RoundRunner._global_sim_lock.release()
 
-    def _on_round_complete(self, server, round_no: int) -> None:
+    def _on_round_complete(self, server, round_no: int, steps: int | None = None) -> None:
         state = self.store.load()
+        steps = steps or state.steps_per_round
         # 1. 壓縮新 checkpoint → frame + feed
         self.frames.scan(state.processed_steps)
         # 2. story-recap 提取（背景生成敘事）
@@ -254,7 +286,7 @@ class RoundRunner:
                 recap.on_round_end(
                     self.session,
                     round_no,
-                    (prev_cursor + 1, prev_cursor + state.steps_per_round),
+                    (prev_cursor + 1, prev_cursor + steps),
                     background=True,
                 )
             except Exception:
@@ -264,12 +296,41 @@ class RoundRunner:
         gm.on_round_end(server, round_no)
         # 4. 狀態推進
         with self.store.mutate() as s:
-            s.sim_step_cursor += s.steps_per_round
+            s.sim_step_cursor += steps
             s.processed_steps = list(
-                set(s.processed_steps) | set(range(s.sim_step_cursor - s.steps_per_round + 1,
+                set(s.processed_steps) | set(range(s.sim_step_cursor - steps + 1,
                                                    s.sim_step_cursor + 1))
             )
             s.status = UIStatus.WAITING_DECISION
+
+    # ---------------------------------------------------------------- 旁白
+
+    def poll_scan(self) -> None:
+        """輪詢時即場掃新 checkpoint（角色即時郁，唔使等回合完）。"""
+        try:
+            self.frames.scan(self.store.load().processed_steps)
+        except Exception:
+            logger.warning("round_runner: poll scan 失敗", exc_info=True)
+
+    def maybe_narrate(self, new_feed: list) -> None:
+        """有新事件/對話 → 背景 thread 寫一句劇情旁白入 feed（同一時間最多一個）。"""
+        items = [f for f in new_feed if getattr(f, "kind", None) and f.kind.value in ("event", "chat")]
+        if not items or self._narrating:
+            return
+        events = [f"{f.actor}喺{f.location}：{f.text}" for f in items if f.kind.value == "event"]
+        dialogues = [f"{d.speaker}：「{d.line}」" for f in items if f.kind.value == "chat" for d in f.dialogue]
+        sim_time = items[-1].sim_time
+
+        def _run():
+            self._narrating = True
+            try:
+                text = self._get_narrator().narrate(sim_time, events[-12:], dialogues[-12:])
+                if text:
+                    self.frames.add_narrative_feed(text, sim_time)
+            finally:
+                self._narrating = False
+
+        threading.Thread(target=_run, daemon=True).start()
 
     # ---------------------------------------------------------------- 決策
 

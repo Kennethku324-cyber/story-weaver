@@ -251,3 +251,14 @@ class FrameBuffer:
         )
         self._feed.append(item)
         return item
+
+    def add_narrative_feed(self, text: str, sim_time: str = "") -> FeedItem:
+        """即時劇情旁白（StepNarrator 產出）。"""
+        item = FeedItem(
+            seq=self._next_seq(),
+            sim_time=sim_time,
+            kind=FeedKind.NARRATIVE,
+            text=text,
+        )
+        self._feed.append(item)
+        return item

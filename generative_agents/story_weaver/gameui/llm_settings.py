@@ -59,6 +59,7 @@ def load_settings() -> dict:
         "agent_llm": _mask(((config.get("agent") or {}).get("think") or {}).get("llm") or {}),
         "embedding": _mask(((config.get("agent") or {}).get("associate") or {}).get("embedding") or {}),
         "gm_llm": _mask(gm_config.get("llm") or {}),
+        "pace": {"steps_per_round": int(gm_config.get("steps_per_round", 6))},
     }
 
 
@@ -75,15 +76,28 @@ def _validate_section(name: str, section: dict) -> str | None:
 
 
 def save_settings(payload: dict) -> list[str]:
-    """寫入三組配置。返錯誤列表（空 = 成功）。空 api_key 保留舊值。"""
+    """寫入三組配置 + pace（每回合步數）。返錯誤列表（空 = 成功）。空 api_key 保留舊值。"""
     errors = []
     for name in ("agent_llm", "embedding", "gm_llm"):
         if name in payload:
             err = _validate_section(name, payload[name])
             if err:
                 errors.append(err)
+    pace = payload.get("pace")
+    if pace is not None:
+        try:
+            steps = int(pace.get("steps_per_round", 0))
+            if not 1 <= steps <= 20:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append("每回合步數必須係 1-20 嘅整數")
     if errors:
         return errors
+
+    if pace is not None:
+        gm_pace = _read_json(GM_CONFIG_PATH)
+        gm_pace["steps_per_round"] = int(pace["steps_per_round"])
+        _write_json_atomic(GM_CONFIG_PATH, gm_pace)
 
     config = _read_json(CONFIG_PATH)
     gm_config = _read_json(GM_CONFIG_PATH)

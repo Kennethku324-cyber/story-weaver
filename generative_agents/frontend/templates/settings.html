@@ -44,6 +44,15 @@
     <div class="llm-fields"></div>
   </div>
 
+  <div class="llm-card">
+    <h4>遊戲節奏</h4>
+    <p class="desc">每回合行幾多個模擬步。步數越少回合越快（推薦 3-6；每步大約 1-2 分鐘，視乎角色數目同模型速度）。</p>
+    <div class="llm-field">
+      <label>每回合步數（1-20）</label>
+      <input type="number" id="pace-steps" min="1" max="20" style="width:120px">
+    </div>
+  </div>
+
   <button class="btn btn-primary" id="btn-save" style="padding:.6em 2em">儲存全部設定</button>
   <a href="/" style="margin-left:1em">返主頁</a>
   <div id="save-result"></div>
@@ -117,7 +126,7 @@
   }
 
   document.getElementById("btn-save").addEventListener("click", function () {
-    var payload = {};
+    var payload = { pace: { steps_per_round: parseInt(document.getElementById("pace-steps").value, 10) } };
     SECTIONS.forEach(function (s) { payload[s] = gather(s); });
     var box = document.getElementById("save-result");
     fetch("/api/settings/llm", {
@@ -135,6 +144,7 @@
   fetch("/api/settings/llm").then(function (r) { return r.json(); }).then(function (body) {
     data = body;
     render();
+    if (body.pace) document.getElementById("pace-steps").value = body.pace.steps_per_round;
   });
 })();
 </script>
