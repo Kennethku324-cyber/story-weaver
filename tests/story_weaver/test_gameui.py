@@ -113,7 +113,7 @@ class FakeSimServer:
                     },
                 }
             self.config["agents"] = agents
-            fname = f"simulate-{sim_time.replace('-', '').replace(':', '')}.json"
+            fname = f"simulate-{sim_time.replace(':', '')}.json"
             with open(os.path.join(self.folder, fname), "w", encoding="utf-8") as f:
                 json.dump(self.config, f, ensure_ascii=False)
             if step == 1:
@@ -242,11 +242,11 @@ def test_framebuffer_skips_corrupt(tmp_path):
     folder = make_session(tmp_path)
     server = FakeSimServer(folder)
     server.simulate(1, 10)
-    with open(os.path.join(folder, "simulate-202402130950.json"), "w") as f:
+    with open(os.path.join(folder, "simulate-20240213-0950.json"), "w") as f:
         f.write('{"step": 2, "time": "20240213-09:50", "agents": {"阿珍')
     buf = FrameBuffer(folder, FakeMaze())
     result = buf.scan([])
-    assert result["skipped"] == ["simulate-202402130950.json"]
+    assert result["skipped"] == ["simulate-20240213-0950.json"]
     assert buf.last_step == 1
 
 
@@ -316,7 +316,7 @@ def test_recover_rolls_back_simulating(tmp_path):
     runner, server, gm = make_runner(tmp_path)
     # 模擬「死喺推演中途」：status=SIMULATING + 一個完整 checkpoint + 一個半截
     server.simulate(1, 10)
-    with open(os.path.join(runner.folder, "simulate-202402130950.json"), "w") as f:
+    with open(os.path.join(runner.folder, "simulate-20240213-0950.json"), "w") as f:
         f.write('{"step": 2, 截斷')
     with runner.store.mutate() as s:
         s.status = UIStatus.SIMULATING
@@ -326,18 +326,18 @@ def test_recover_rolls_back_simulating(tmp_path):
     assert state.status == UIStatus.IDLE
     assert state.sim_step_cursor == 1
     assert "恢復" in state.error
-    assert info.skipped_files == ["simulate-202402130950.json"]
+    assert info.skipped_files == ["simulate-20240213-0950.json"]
 
 
 def test_scan_checkpoints_tolerant(tmp_path):
     folder = make_session(tmp_path)
     server = FakeSimServer(folder)
     server.simulate(2, 10)
-    with open(os.path.join(folder, "simulate-202402131000.json"), "w") as f:
+    with open(os.path.join(folder, "simulate-20240213-1000.json"), "w") as f:
         f.write("唔係 json")
     step, skipped, config = scan_checkpoints(folder)
     assert step == 2
-    assert skipped == ["simulate-202402131000.json"]
+    assert skipped == ["simulate-20240213-1000.json"]
     assert config["step"] == 2
 
 
@@ -383,7 +383,7 @@ def test_compress_ignores_metadata_json(tmp_path, monkeypatch):
                     }},
                 }},
             }
-            fname = f"simulate-{sim_time.replace('-', '').replace(':', '')}.json"
+            fname = f"simulate-{sim_time.replace(':', '')}.json"
             with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
         # 各系統嘅 metadata json（內容同 checkpoint 完全唔同）

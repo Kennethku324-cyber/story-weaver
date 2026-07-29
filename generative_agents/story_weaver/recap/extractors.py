@@ -23,7 +23,7 @@ from .models import DialogueBlock, DialogueLine, TimelineEvent
 
 logger = logging.getLogger(__name__)
 
-SIMULATE_FILE_RE = re.compile(r"^simulate-\d{12}\.json$")
+SIMULATE_FILE_RE = re.compile(r"^simulate-\d{8}-\d{4}\.json$")  # simulate-YYYYMMDD-HHMM.json（start.py 寫檔格式）
 
 # 瑣碎事件嘅 predicate/object 組合（英文係原版容錯）
 _TRIVIAL_PREDICATES = {"is", KW_AT_THIS_TIME}

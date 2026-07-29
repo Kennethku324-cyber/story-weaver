@@ -33,7 +33,7 @@ def make_checkpoint(sim_dir, step, sim_time, events):
             "status": {},
         }
     data = {"time": sim_time, "step": step, "stride": 10, "agents": agents}
-    fname = f"simulate-{sim_time.replace('-', '').replace(':', '')}.json"
+    fname = f"simulate-{sim_time.replace(':', '')}.json"
     with open(os.path.join(sim_dir, fname), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
@@ -96,7 +96,7 @@ def test_corrupt_checkpoint_skipped(tmp_path):
         AGENT: ("正在", "寫信", "阿珍寫緊信", ["小鎮", "屋企"]),
     })
     # step 2 寫到一半（JSON 截斷）
-    with open(os.path.join(sim_dir, "simulate-202402130940.json"), "w") as f:
+    with open(os.path.join(sim_dir, "simulate-20240213-0940.json"), "w") as f:
         f.write('{"time": "20240213-09:40", "step": 2, "agents": {"阿珍": {"act')
     make_checkpoint(sim_dir, 3, "20240213-09:50", {
         AGENT: ("正在", "寄信", "阿珍去咗寄信", ["小鎮", "郵局"]),

@@ -19,7 +19,7 @@ from .models import DialogueLine, FeedItem, FeedKind
 
 logger = logging.getLogger(__name__)
 
-SIMULATE_FILE_RE = re.compile(r"^simulate-\d{12}\.json$")
+SIMULATE_FILE_RE = re.compile(r"^simulate-\d{8}-\d{4}\.json$")  # simulate-YYYYMMDD-HHMM.json（start.py 寫檔格式）
 
 # 同 compress.py:12 保持一致（唔 import compress——佢會連帶 import start.py，
 # 而 start.py 喺 import 時 parse_args，非 CLI 環境會炸）
