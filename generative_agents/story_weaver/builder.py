@@ -123,20 +123,23 @@ class StoryBuilder:
                     message=f"住所「{' · '.join(char.home[1:])}」唔存在或者冇床，唔住得人",
                 ))
 
-        # 4) 住所衝突（dry-run，唔 mutate registry）
-        taken: dict[tuple, str] = {}
+        # 4) 住所衝突（dry-run，唔 mutate registry）。
+        # 夫婦同房係正常（梅+約翰等），容量 = max(2, 床 tile 數)；超過先報錯。
+        taken: dict[tuple, list[str]] = {}
         for idx, char in enumerate(req.characters):
             key = tuple(char.home)
-            if key in taken:
+            occupants = taken.setdefault(key, [])
+            capacity = self.housing.capacity_of(char.home)
+            if len(occupants) >= capacity:
                 errors.append(FieldError(
                     field=f"characters[{idx}].home",
                     message=(
-                        f"「{' · '.join(char.home[1:])}」已經俾「{taken[key]}」住咗，"
-                        "兩個角色唔可以住同一間房"
+                        f"「{' · '.join(char.home[1:])}」已經住滿（{capacity} 人："
+                        f"{'、'.join(occupants)}），唔可以再住多個"
                     ),
                 ))
             else:
-                taken[key] = char.display_name
+                occupants.append(char.display_name)
 
         # 5) 關係：from/to 必須係已揀角色，from ≠ to
         name_set = set(display_names)

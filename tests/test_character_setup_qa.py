@@ -325,12 +325,20 @@ class TestRelationships:
 # 邊界 5：住所衝突 / 無床房
 # ======================================================================
 class TestHousing:
-    def test_same_room_conflict_422(self, client, valid_payload):
-        """邊界 5：兩個角色揀同一間房 → 422 中文錯。"""
+    def test_couple_same_room_ok(self, client, valid_payload):
+        """夫婦同房合法（梅+約翰等模板預設就係同房）：兩個角色揀同一間房 → 201。"""
+        valid_payload["story_name"] = "couple-room-ok"
         valid_payload["characters"][1]["home"] = list(valid_payload["characters"][0]["home"])
         resp = client.post("/api/setup/create", json=valid_payload)
+        assert resp.status_code == 201
+
+    def test_over_capacity_conflict_422(self, client, valid_payload):
+        """超出房間容量（≥3 人同房）→ 422 中文錯。"""
+        for i in (1, 2):
+            valid_payload["characters"][i]["home"] = list(valid_payload["characters"][0]["home"])
+        resp = client.post("/api/setup/create", json=valid_payload)
         assert resp.status_code == 422
-        assert any("同一間房" in e["message"] for e in resp.get_json()["errors"])
+        assert any("住滿" in e["message"] for e in resp.get_json()["errors"])
 
     def test_same_house_different_room_ok(self, builder, valid_payload):
         """邊界 5：同屋唔同房（宿舍唔同房間）合法。"""
@@ -347,13 +355,14 @@ class TestHousing:
         assert any(e["field"] == "characters[0].home" for e in resp.get_json()["errors"])
 
     def test_conflict_message_lists_remaining_rooms(self, housing):
-        """邊界 5：Registry 層面撞房時列出剩餘空房。"""
+        """邊界 5：Registry 層面住滿時列出剩餘空房。"""
         from story_weaver.housing import HousingConflict
 
         room = housing.available()[0]
         housing.assign(room.address, "阿欣")
+        housing.assign(room.address, "阿強")  # 夫婦同房 OK（容量 ≥2）
         with pytest.raises(HousingConflict) as exc:
-            housing.assign(room.address, "阿強")
+            housing.assign(room.address, "第三個人")  # 住滿 → 衝突
         assert "剩餘空房" in str(exc.value)
         assert exc.value.available
         housing.release_all()
@@ -536,7 +545,7 @@ class TestBuildOutputs:
         assert body["template_map"]["阿欣"] == "模板甲"
         assert os.path.isdir(body["story_dir"])
         assert os.path.isfile(body["sim_config_path"])
-        assert body["redirect"] == "/?name=茶餐廳風雲"
+        assert body["redirect"] == "/game?name=茶餐廳風雲"
 
     def test_agent_dir_contains_three_files(self, builder, valid_request):
         """Done When：每個角色目錄有 agent.json + portrait.png + texture.png。"""

@@ -192,6 +192,6 @@ def create_setup():
         clamped=result.clamped,
         filled_relationships=result.filled_relationships,
         llm_fallback=result.llm_fallback,
-        redirect=f"/?name={result.story_name}",
+        redirect=f"/game?name={result.story_name}",
     )
     return jsonify(response.model_dump()), 201
