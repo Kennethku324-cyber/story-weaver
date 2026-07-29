@@ -27,6 +27,7 @@ from story_weaver.routes import setup_bp
 from .models import UIStatus
 from .llm_settings import load_settings, save_settings, test_llm
 from .round_runner import RoundBusyError, RoundRunner
+from .state_store import GameUIStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -92,16 +93,75 @@ def create_app() -> Flask:
 
     @app.get("/")
     def home():
-        return (
-            "<div style='font-family:sans-serif;max-width:480px;margin:4em auto;text-align:center'>"
-            "<h2>Story Weaver</h2>"
-            "<p>你係導演，唔係玩家——設定角色，睇住佢哋生活，喺關鍵時刻插手。</p>"
-            "<p><a href='/setup' style='display:inline-block;padding:.7em 1.8em;"
-            "background:#b3541e;color:#fff;border-radius:999px;text-decoration:none;"
-            "font-weight:bold'>開始新故事</a></p>"
-            "<p style='margin-top:1em'><a href='/settings' style='color:#888'>⚙ LLM 設定</a></p>"
-            "</div>"
-        )
+        return render_template("home.html")
+
+    # ---------------------------------------------------------------- 故事管理
+
+    @app.get("/api/stories")
+    def api_stories():
+        """列出全部故事（主頁用）。"""
+        root = _checkpoints_root()
+        stories = []
+        if os.path.isdir(root):
+            for name in sorted(os.listdir(root)):
+                folder = os.path.join(root, name)
+                if not os.path.isdir(folder):
+                    continue
+                # 只認真故事目錄（有 story.json 或 game_ui_state.json）
+                if not (os.path.exists(os.path.join(folder, "story.json"))
+                        or os.path.exists(os.path.join(folder, "game_ui_state.json"))):
+                    continue
+                meta = {}
+                try:
+                    with open(os.path.join(folder, "story.json"), "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                except Exception:
+                    pass
+                entry = {
+                    "name": name,
+                    "opening": (meta.get("story_opening") or "")[:60],
+                    "characters": meta.get("characters") or [],
+                    "created_at": meta.get("created_at", ""),
+                    "round": None,
+                    "status": None,
+                }
+                try:
+                    state = GameUIStateStore(folder).load()
+                    entry["round"] = state.round
+                    entry["status"] = state.status.value
+                except Exception:
+                    pass
+                stories.append(entry)
+        return jsonify({"stories": stories})
+
+    @app.post("/api/story/delete")
+    def api_story_delete():
+        """刪除故事：checkpoints 目錄 + story_agents 素材 + server 記憶體狀態。"""
+        import shutil
+
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name or "/" in name or ".." in name:
+            return jsonify({"error": "故事名唔啱"}), 400
+        folder = os.path.join(_checkpoints_root(), name)
+        if not os.path.isdir(folder):
+            return jsonify({"error": f"搵唔到故事「{name}」"}), 404
+        # 推演中唔准刪
+        with _runners_lock:
+            runner = _runners.get(name)
+        if runner is not None:
+            try:
+                if runner.store.load().status == UIStatus.SIMULATING:
+                    return jsonify({"error": "推演進行中，等佢停先好刪"}), 409
+            except Exception:
+                pass
+        shutil.rmtree(folder, ignore_errors=True)
+        story_agents = os.path.join(GEN_ROOT, "frontend", "static", "assets", "village", "story_agents", name)
+        shutil.rmtree(story_agents, ignore_errors=True)
+        with _runners_lock:
+            _runners.pop(name, None)
+        logger.info("game_server: 故事「%s」已刪除", name)
+        return jsonify({"ok": True})
 
     # ---------------------------------------------------------------- LLM 設定
 

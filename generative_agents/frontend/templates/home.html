@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .home-wrap { max-width: 680px; margin: 3em auto; text-align: center; font-family: sans-serif; }
+  .story-list { margin: 2em 0; text-align: left; }
+  .story-item { display: flex; align-items: center; gap: 1em; border: 1px solid #ddd;
+                border-radius: 8px; padding: .8em 1.2em; margin-bottom: .8em; }
+  .story-item .info { flex: 1; }
+  .story-item .name { font-weight: bold; }
+  .story-item .meta { color: #888; font-size: 13px; }
+  .btn-continue { background: #b3541e; color: #fff; border: none; border-radius: 999px;
+                  padding: .4em 1.2em; text-decoration: none; }
+  .btn-delete { background: none; color: #c00; border: 1px solid #c00; border-radius: 999px;
+                padding: .4em 1em; cursor: pointer; }
+</style>
+
+<div class="home-wrap">
+  <h2>Story Weaver</h2>
+  <p>你係導演，唔係玩家——設定角色，睇住佢哋生活，喺關鍵時刻插手。</p>
+  <p><a href='/setup' style='display:inline-block;padding:.7em 1.8em;background:#b3541e;color:#fff;border-radius:999px;text-decoration:none;font-weight:bold'>開始新故事</a></p>
+  <p><a href='/settings' style='color:#888'>⚙ LLM 設定</a></p>
+
+  <div class="story-list" id="story-list"></div>
+</div>
+
+<script>
+(function () {
+  fetch("/api/stories").then(function (r) { return r.json(); }).then(function (body) {
+    var list = document.getElementById("story-list");
+    var stories = body.stories || [];
+    if (!stories.length) return;
+    var title = document.createElement("h4");
+    title.textContent = "繼續之前嘅故事";
+    list.appendChild(title);
+    stories.forEach(function (s) {
+      var item = document.createElement("div");
+      item.className = "story-item";
+      var info = document.createElement("div");
+      info.className = "info";
+      var statusText = s.status ? ("第 " + (s.round || 0) + " 回合") : "未開始";
+      info.innerHTML = '<div class="name"></div><div class="meta"></div>';
+      info.querySelector(".name").textContent = s.name;
+      info.querySelector(".meta").textContent =
+        statusText + (s.characters.length ? " · " + s.characters.join("、") : "") +
+        (s.opening ? " · " + s.opening + "…" : "");
+      var go = document.createElement("a");
+      go.className = "btn-continue";
+      go.textContent = "繼續玩";
+      go.href = "/game?name=" + encodeURIComponent(s.name);
+      var del = document.createElement("button");
+      del.className = "btn-delete";
+      del.textContent = "刪除";
+      del.addEventListener("click", function () {
+        if (!window.confirm("真係刪除「" + s.name + "」？故事記錄同角色素材會一齊刪走，冇得還原。")) return;
+        fetch("/api/story/delete", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: s.name }),
+        }).then(function (r) { return r.json(); }).then(function (body) {
+          if (body.ok) item.remove();
+          else window.alert(body.error || "刪除失敗");
+        });
+      });
+      item.appendChild(info);
+      item.appendChild(go);
+      item.appendChild(del);
+      list.appendChild(item);
+    });
+  });
+})();
+</script>
+{% endblock content %}
