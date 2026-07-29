@@ -42,20 +42,25 @@ def test_narrate_llm_failure():
 def cfg_files(tmp_path, monkeypatch):
     gm_path = tmp_path / "gm_config.json"
     gm_path.write_text(json.dumps({"llm": {}, "steps_per_round": 6}), encoding="utf-8")
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"agent": {"chat_iter": 4}}), encoding="utf-8")
     monkeypatch.setattr(llm_settings, "GM_CONFIG_PATH", str(gm_path))
-    monkeypatch.setattr(llm_settings, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(llm_settings, "CONFIG_PATH", str(config_path))
     return gm_path
 
 
 def test_pace_roundtrip(cfg_files):
     s = llm_settings.load_settings()
     assert s["pace"]["steps_per_round"] == 6
-    errors = llm_settings.save_settings({"pace": {"steps_per_round": 4}})
+    errors = llm_settings.save_settings({"pace": {"steps_per_round": 4, "chat_iter": 2}})
     assert errors == []
     assert llm_settings.load_settings()["pace"]["steps_per_round"] == 4
+    assert llm_settings.load_settings()["pace"]["chat_iter"] == 2
 
 
 def test_pace_validation(cfg_files):
-    errors = llm_settings.save_settings({"pace": {"steps_per_round": 99}})
+    errors = llm_settings.save_settings({"pace": {"steps_per_round": 99, "chat_iter": 2}})
     assert errors and "1-20" in errors[0]
+    errors = llm_settings.save_settings({"pace": {"steps_per_round": 4, "chat_iter": 99}})
+    assert errors and "1-8" in errors[0]
     assert llm_settings.load_settings()["pace"]["steps_per_round"] == 6  # 無寫到

@@ -51,6 +51,11 @@
       <label>每回合步數（1-20）</label>
       <input type="number" id="pace-steps" min="1" max="20" style="width:120px">
     </div>
+    <div class="llm-field">
+      <label>對話長度（1-8，越少越快）</label>
+      <input type="number" id="pace-chat-iter" min="1" max="8" style="width:120px">
+      <div class="key-hint">每場對話最多嘅你一言我一語回合數。4 = 傾得詳細但慢；2 = 短啲但快好多。</div>
+    </div>
   </div>
 
   <button class="btn btn-primary" id="btn-save" style="padding:.6em 2em">儲存全部設定</button>
@@ -126,7 +131,10 @@
   }
 
   document.getElementById("btn-save").addEventListener("click", function () {
-    var payload = { pace: { steps_per_round: parseInt(document.getElementById("pace-steps").value, 10) } };
+    var payload = { pace: {
+      steps_per_round: parseInt(document.getElementById("pace-steps").value, 10),
+      chat_iter: parseInt(document.getElementById("pace-chat-iter").value, 10),
+    } };
     SECTIONS.forEach(function (s) { payload[s] = gather(s); });
     var box = document.getElementById("save-result");
     fetch("/api/settings/llm", {
@@ -144,7 +152,10 @@
   fetch("/api/settings/llm").then(function (r) { return r.json(); }).then(function (body) {
     data = body;
     render();
-    if (body.pace) document.getElementById("pace-steps").value = body.pace.steps_per_round;
+    if (body.pace) {
+      document.getElementById("pace-steps").value = body.pace.steps_per_round;
+      document.getElementById("pace-chat-iter").value = body.pace.chat_iter;
+    }
   });
 })();
 </script>

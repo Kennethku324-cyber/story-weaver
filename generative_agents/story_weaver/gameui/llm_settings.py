@@ -59,7 +59,10 @@ def load_settings() -> dict:
         "agent_llm": _mask(((config.get("agent") or {}).get("think") or {}).get("llm") or {}),
         "embedding": _mask(((config.get("agent") or {}).get("associate") or {}).get("embedding") or {}),
         "gm_llm": _mask(gm_config.get("llm") or {}),
-        "pace": {"steps_per_round": int(gm_config.get("steps_per_round", 6))},
+        "pace": {
+            "steps_per_round": int(gm_config.get("steps_per_round", 6)),
+            "chat_iter": int(((config.get("agent") or {}).get("chat_iter")) or 4),
+        },
     }
 
 
@@ -91,6 +94,12 @@ def save_settings(payload: dict) -> list[str]:
                 raise ValueError
         except (TypeError, ValueError):
             errors.append("每回合步數必須係 1-20 嘅整數")
+        try:
+            chat_iter = int(pace.get("chat_iter", 0))
+            if not 1 <= chat_iter <= 8:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append("對話長度必須係 1-8 嘅整數")
     if errors:
         return errors
 
@@ -98,6 +107,9 @@ def save_settings(payload: dict) -> list[str]:
         gm_pace = _read_json(GM_CONFIG_PATH)
         gm_pace["steps_per_round"] = int(pace["steps_per_round"])
         _write_json_atomic(GM_CONFIG_PATH, gm_pace)
+        cfg_pace = _read_json(CONFIG_PATH)
+        cfg_pace.setdefault("agent", {})["chat_iter"] = int(pace["chat_iter"])
+        _write_json_atomic(CONFIG_PATH, cfg_pace)
 
     config = _read_json(CONFIG_PATH)
     gm_config = _read_json(GM_CONFIG_PATH)
