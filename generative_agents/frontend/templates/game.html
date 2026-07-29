@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  #topbar { padding: .6em 1em; background: #2b2b2b; color: #eee; display: flex;
+            align-items: center; gap: 1.2em; font-size: 15px; }
+  #topbar .label { color: #999; }
+  #btn-round { background: #b3541e; color: #fff; border: none; border-radius: 999px;
+               padding: .5em 1.6em; font-weight: bold; }
+  #btn-round:disabled { background: #777; }
+  #error-banner, #readonly-banner { display: none; padding: .5em 1em; }
+  #error-banner { background: #f8d7da; color: #842029; }
+  #readonly-banner { background: #fff3cd; color: #664d03; }
+  #feed { height: 420px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px;
+          padding: .6em; background: #fafafa; font-size: 13px; }
+  .feed-event { margin-bottom: .4em; }
+  .feed-chat { margin-bottom: .6em; background: #fff; border-left: 3px solid #b3541e;
+               padding: .3em .6em; }
+  .feed-system { margin-bottom: .4em; color: #0b5ed7; font-style: italic; }
+  .feed-time { color: #999; margin-right: .4em; }
+  #affinity-panel table { font-size: 13px; width: 100%; }
+  .option-card { border: 2px solid #ddd; border-radius: 8px; padding: .8em 1em;
+                 margin-bottom: .8em; cursor: pointer; }
+  .option-card:hover { border-color: #b3541e; }
+  .option-card.active { border-color: #b3541e; background: #fdf3ec; }
+  .option-card .predicted { color: #666; font-size: 13px; }
+  #story-review { max-height: 320px; overflow-y: auto; border: 1px solid #eee;
+                  border-radius: 5px; padding: .8em; background: #fafafa; }
+  .tl-round { margin-bottom: 1em; }
+  .tl-summary { font-weight: bold; }
+  .tl-dialogue { margin: .3em 0 .3em 1em; font-size: 13px; color: #333; }
+  .tl-choice { color: #b3541e; font-size: 13px; }
+  #char-count { font-size: 12px; color: #999; }
+</style>
+
+<div id="topbar">
+  <span><span class="label">故事</span> {{ session }}</span>
+  <span><span class="label">回合</span> <span id="ui-round">0</span> / <span id="ui-max-round">10</span></span>
+  <span><span class="label">狀態</span> <span id="ui-status">準備中…</span></span>
+  <span><span class="label">遊戲內時間</span> <span id="ui-sim-time">—</span></span>
+  <span style="margin-left:auto">
+    <button id="btn-round">開始推演</button>
+  </span>
+</div>
+<div id="error-banner"></div>
+<div id="readonly-banner">觀察模式：另一個分頁正在主持此故事。</div>
+
+<div class="row" style="margin:0">
+  <div class="col-md-8" style="padding:0">
+    <div id="game-container" style="text-align: center"></div>
+    <div style="border: solid 1px #ccc; padding: .8em; border-radius: 5px; margin: .4em;">
+      <div class="row" style="display: flex; flex-wrap: wrap; margin: -0.5em;">
+        {% for p in persona_names %}
+        <div style="text-align: center; margin: 0.5em;" id="on_screen_det_trigger_container-{{ p }}">
+          <a href="javascript:void(0);" id="on_screen_det_trigger-{{ p }}">
+            <div style="padding: 0;">
+              {% set image_static = 'assets/village/agents/' ~ p ~ '/portrait.png' %}
+              <img src="{{ url_for('static', filename=image_static) }}" style="width: 32px; padding: 0;">
+              <br>{{ persona_display[p] }}
+            </div>
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="media" id="on_screen_det_content-init"
+         style="background-color:#EEEEEE; padding:1em; border-radius:5px; margin:.4em;">
+      <em>點擊角色可查看更多細節。</em>
+    </div>
+    {% for p in persona_names %}
+    <div class="media" id="on_screen_det_content-{{ p }}"
+         style="background-color:#EEEEEE; border-radius:5px; display:none; margin:.4em; padding:.6em;">
+      <div class="media-body">
+        <p><span id="agent_desc__{{ p }}"></span></p>
+        <p>當前活動：<span id="current_action__{{ p }}"></span> @ <span id="target_address__{{ p }}"></span></p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="col-md-4" style="padding:.4em">
+    <h5><b>小鎮動態</b></h5>
+    <div id="feed"></div>
+    <h5 style="margin-top:1em"><b>好感度</b></h5>
+    <div id="affinity-panel"><table class="table table-condensed"><tbody id="affinity-body"></tbody></table></div>
+  </div>
+</div>
+
+<!-- 決策 modal（唔可以撳背景 / ESC 關閉） -->
+<div class="modal fade" id="decision-modal" data-backdrop="static" data-keyboard="false" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">第 <span id="dm-round"></span> 回合結束 — 輪到你落子</h4>
+      </div>
+      <div class="modal-body">
+        <div id="dm-failsafe" class="alert alert-warning" style="display:none">命運之線暫時模糊……今回合只有「任由發展」。</div>
+        <h5><b>故事回顧</b></h5>
+        <div id="story-review"></div>
+        <h5 style="margin-top:1em"><b>本回合摘要</b></h5>
+        <p id="dm-summary"></p>
+        <div id="dm-options-section">
+          <h5><b>劇情分支</b>（揀一個，或者直接寫命令）</h5>
+          <div id="dm-options"></div>
+        </div>
+        <div id="dm-affinity-section" style="display:none">
+          <h5><b>GM 建議嘅好感度變化</b></h5>
+          <div id="dm-affinity-list"></div>
+          <label><input type="checkbox" id="dm-affinity-accept" checked> 接受呢啲調整</label>
+        </div>
+        <h5 style="margin-top:1em"><b>自訂命令</b>（可唔填；填咗會同選項一齊生效）</h5>
+        <div class="form-inline" style="margin-bottom:.4em">
+          <select id="dm-target" class="form-control" style="width:auto">
+            <option value="">（無特定對象）</option>
+          </select>
+        </div>
+        <textarea id="dm-custom" class="form-control" rows="2" maxlength="500"
+                  placeholder="例：命令阿珍聽日主動約阿強去玫瑰酒吧傾偈"></textarea>
+        <div id="char-count">0 / 500</div>
+        <div id="dm-error" class="alert alert-danger" style="display:none; margin-top:.6em"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-default" id="dm-skip">任由發展</button>
+        <button class="btn btn-warning" id="dm-finish" style="display:none">完結故事</button>
+        <button class="btn btn-primary" id="dm-confirm">確認，繼續故事</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 終章 modal -->
+<div class="modal fade" id="finale-modal" data-backdrop="static" data-keyboard="false" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h4 class="modal-title">故事完結</h4></div>
+      <div class="modal-body">
+        <p id="finale-ending" style="white-space: pre-wrap"></p>
+        <div id="finale-epilogues"></div>
+      </div>
+      <div class="modal-footer">
+        <a class="btn btn-default" id="finale-export" href="#">導出故事（Markdown）</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock content %}
+
+{% block js_content %}
+<script src='https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js'></script>
+{% include 'game_script.html' %}
+<script>
+const SESSION = {{ session|tojson }};
+const AGENTS = {{ agents_real|tojson }};
+const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+let sinceFrame = 0, sinceFeed = 0, modalOpen = false, isOwner = false;
+
+const STATUS_TEXT = {
+  idle: "待命", simulating: "推演中…", waiting_decision: "等待你嘅決定",
+  finished: "故事完結", error: "出咗啲問題"
+};
+
+// ---------------------------------------------------------------- 輪詢
+
+function pollState() {
+  $.getJSON("/api/state", {
+    name: SESSION, since_frame: sinceFrame, since_feed: sinceFeed, client_id: clientId
+  }).done(function(resp) {
+    if (resp.new_frames) {
+      Object.assign(all_movement, resp.new_frames);
+    }
+    sinceFrame = resp.frame_latest || sinceFrame;
+    $("#ui-round").text(resp.round);
+    $("#ui-max-round").text(resp.max_rounds);
+    $("#ui-status").text(STATUS_TEXT[resp.status] || resp.status);
+    $("#ui-sim-time").text(resp.sim_time || "—");
+
+    appendFeed(resp.new_feed || []);
+    sinceFeed = resp.feed_latest || sinceFeed;
+    renderAffinity(resp.affinity || {});
+    updateAgentsMeta(resp.agents_meta || {});
+
+    if (resp.error) { $("#error-banner").text(resp.error).show(); }
+    else { $("#error-banner").hide(); }
+
+    $("#readonly-banner").toggle(resp.readonly === true);
+    $("#btn-round").prop("disabled",
+      resp.readonly || resp.status === "simulating" ||
+      resp.status === "waiting_decision" || resp.status === "finished");
+    $("#btn-round").text(resp.round === 0 ? "開始推演" : "下一回合");
+
+    if (resp.status === "waiting_decision" && resp.pending_decision && !modalOpen) {
+      openDecisionModal(resp.pending_decision);
+    }
+    if (resp.status === "finished" && resp.finale) {
+      showFinale(resp.finale);
+    }
+  }).always(function() {
+    setTimeout(pollState, 2000);
+  });
+}
+
+function heartbeat() {
+  $.ajax({ url: "/api/heartbeat", method: "POST", contentType: "application/json",
+    data: JSON.stringify({ name: SESSION, client_id: clientId })
+  }).done(function(resp) { isOwner = resp.is_owner; })
+    .always(function() { setTimeout(heartbeat, 5000); });
+}
+
+// ---------------------------------------------------------------- feed / 面板
+
+function appendFeed(items) {
+  const feed = $("#feed");
+  items.forEach(function(it) {
+    let html = "";
+    const time = $('<span class="feed-time">').text(it.sim_time || "").prop("outerHTML");
+    if (it.kind === "chat") {
+      html = $('<div class="feed-chat">').append(time,
+        $('<div>').text("【" + (it.location || "") + "】"),
+        ...(it.dialogue || []).map(d => $('<div>').text(d.speaker + "：「" + d.line + "」")));
+    } else if (it.kind === "system") {
+      html = $('<div class="feed-system">').append(time, $('<span>').text(it.text));
+    } else {
+      html = $('<div class="feed-event">').append(time,
+        $('<span>').text((it.actor || "") + " 喺 " + (it.location || "") + "：" + it.text));
+    }
+    feed.append(html);
+  });
+  // DOM 上限 200 條
+  while (feed.children().length > 200) feed.children().first().remove();
+  feed.scrollTop(feed.prop("scrollHeight"));
+}
+
+function renderAffinity(affinity) {
+  const body = $("#affinity-body").empty();
+  Object.keys(affinity).forEach(function(a) {
+    Object.keys(affinity[a]).forEach(function(b) {
+      const v = affinity[a][b];
+      const val = (typeof v === "object") ? v.value : v;
+      if (val === 0) return;
+      body.append($("<tr>").append(
+        $("<td>").text(a + " → " + b),
+        $("<td>").text(val).css("color", val > 0 ? "#198754" : "#dc3545")
+      ));
+    });
+  });
+}
+
+function updateAgentsMeta(meta) {
+  AGENTS.forEach(function(name) {
+    const m = meta[name];
+    if (!m) return;
+    const p = name.replace(" ", "_");
+    $("#agent_desc__" + p).text(m.currently || "");
+    $("#current_action__" + p).text(m.action || "");
+    $("#target_address__" + p).text(m.location || "");
+  });
+}
+
+// ---------------------------------------------------------------- 決策 modal
+
+function openDecisionModal(decision) {
+  modalOpen = true;
+  $("#dm-round").text(decision.round_no);
+  $("#dm-summary").text(decision.summary || "");
+  $("#dm-failsafe").toggle(decision.is_failsafe === true);
+
+  // 故事回顧（對白原文）
+  const review = $("#story-review").empty();
+  (decision.story_timeline || []).forEach(function(entry) {
+    const block = $('<div class="tl-round">');
+    if (entry.round === 0) {
+      block.append($('<div class="tl-summary">').text("【故事開端】" + entry.summary));
+    } else {
+      block.append($('<div class="tl-summary">').text("第 " + entry.round + " 回合：" + (entry.summary || "")));
+      (entry.dialogues || []).forEach(function(d) {
+        const dl = $('<div class="tl-dialogue">').append($('<b>').text(d.speakers + " @ " + d.address));
+        (d.lines || []).forEach(l => dl.append($('<div>').text(l[0] + "：「" + l[1] + "」")));
+        block.append(dl);
+      });
+      if (entry.player_choice && entry.player_choice.text) {
+        block.append($('<div class="tl-choice">').text("✦ 你嘅決定：" + entry.player_choice.text));
+      }
+    }
+    review.append(block);
+  });
+
+  // 選項卡
+  const opts = $("#dm-options").empty();
+  $("#dm-options-section").toggle((decision.options || []).length > 0);
+  (decision.options || []).forEach(function(o) {
+    const card = $('<div class="option-card">').data("option-id", o.id)
+      .append($('<div><b></b></div>').text(o.id + ". " + o.title),
+              $('<div class="predicted">').text(o.predicted));
+    card.on("click", function() {
+      $(".option-card").removeClass("active");
+      $(this).addClass("active");
+    });
+    opts.append(card);
+  });
+
+  // 好感度建議
+  const suggestions = decision.suggested_affinity_changes || [];
+  $("#dm-affinity-section").toggle(suggestions.length > 0);
+  $("#dm-affinity-list").empty().append(suggestions.map(s =>
+    $('<div>').text(s.from_agent + " → " + s.to_agent + "：" + (s.delta > 0 ? "+" : "") + s.delta + "（" + s.reason + "）")
+  ));
+
+  // 角色下拉
+  const target = $("#dm-target");
+  target.find("option:not(:first)").remove();
+  AGENTS.forEach(n => target.append($("<option>").val(n).text(n)));
+
+  $("#dm-custom").val("");
+  $("#char-count").text("0 / 500");
+  $("#dm-error").hide();
+  $("#dm-finish").toggle(decision.can_finish === true);
+  $("#decision-modal").modal("show");
+}
+
+function submitDecision(payload) {
+  payload.name = SESSION;
+  payload.client_id = clientId;
+  $.ajax({ url: "/api/decision", method: "POST", contentType: "application/json",
+    data: JSON.stringify(payload)
+  }).done(function(resp) {
+    if (resp.accepted) {
+      modalOpen = false;
+      $("#decision-modal").modal("hide");
+    } else {
+      // 命令被拒（feasible=false）：保留已輸入內容
+      $("#dm-error").text(resp.message || "命令未能執行。").show();
+    }
+  }).fail(function(xhr) {
+    const msg = (xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.reason)) || "提交失敗，請再試一次。";
+    $("#dm-error").text(msg).show();
+  });
+}
+
+$("#dm-confirm").on("click", function() {
+  const payload = {};
+  const active = $(".option-card.active").first();
+  if (active.length) payload.choice_id = active.data("option-id");
+  const text = $("#dm-custom").val().trim();
+  if (text) payload.custom_command = { target_agent: $("#dm-target").val(), text: text };
+  if ($("#dm-affinity-accept").is(":checked") && $("#dm-affinity-section").is(":visible")) {
+    payload.affinity_overrides = window._lastSuggestions || [];
+  }
+  submitDecision(payload);
+});
+$("#dm-skip").on("click", function() { submitDecision({}); });
+$("#dm-finish").on("click", function() { submitDecision({ finish: true }); });
+$("#dm-custom").on("input", function() {
+  $("#char-count").text($(this).val().length + " / 500");
+});
+
+// 記低 GM 建議（submit 時做 overrides）
+const _origOpen = openDecisionModal;
+openDecisionModal = function(decision) {
+  window._lastSuggestions = decision.suggested_affinity_changes || [];
+  _origOpen(decision);
+};
+
+// ---------------------------------------------------------------- 終章
+
+function showFinale(finale) {
+  $("#finale-ending").text(finale.narrative ? finale.narrative.ending : "");
+  const eps = $("#finale-epilogues").empty();
+  ((finale.narrative && finale.narrative.character_epilogues) || []).forEach(function(e) {
+    eps.append($("<p>").append($("<b>").text(e.name + "："), $("<span>").text(e.epilogue)));
+  });
+  $("#finale-export").attr("href", "/api/export/story?name=" + encodeURIComponent(SESSION) + "&format=md");
+  $("#finale-modal").modal("show");
+}
+
+// ---------------------------------------------------------------- 開始推演
+
+$("#btn-round").on("click", function() {
+  const btn = $(this).prop("disabled", true);
+  $.ajax({ url: "/api/round/start", method: "POST", contentType: "application/json",
+    data: JSON.stringify({ name: SESSION, command: "start", client_id: clientId })
+  }).fail(function(xhr) {
+    const msg = (xhr.responseJSON && (xhr.responseJSON.reason || xhr.responseJSON.error)) || "未能開始";
+    $("#error-banner").text(msg).show();
+  });
+});
+
+// 角色詳情面板（沿用 index.html 機制）
+{% for p in persona_names %}
+$('#on_screen_det_trigger-{{ p }}').click(function() {
+  $('#on_screen_det_content-init').hide();
+  {% for p_i in persona_names %}
+  $('#on_screen_det_content-{{ p_i }}').hide();
+  $('#on_screen_det_trigger-{{ p_i }}').css({'font-weight': '500'});
+  {% endfor %}
+  $('#on_screen_det_trigger-{{ p }}').css({'font-weight': '900'});
+  $('#on_screen_det_content-{{ p }}').show();
+  document.getElementById("temp_focus").innerHTML = "{{ p }}";
+});
+{% endfor %}
+$("#game-container").append('<div style="display:none" id="temp_focus"></div>');
+
+pollState();
+heartbeat();
+</script>
+{% endblock js_content %}

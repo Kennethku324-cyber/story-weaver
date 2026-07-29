@@ -31,9 +31,16 @@
 
 `modules/game.py:86` 嘅 `GenerativeAgentsMap` 係全局單例（`create_game` set / `get_game` get），**一個進程同一時間只可以有一個 simulation**。`RoundRunner` 用一把 process-wide `threading.Lock`（唔係 per-session 鎖）保證：任何時刻只有一個 `SimulateServer.simulate` 線程。第二個 session 想推演會收到 409。
 
-### 1.5 GM / 決策注入用「可註冊 callable + HTTP 兜底」雙軌
+### 1.5 GM / 決策注入：進程內直接整合（✅ 已更新，原雙軌設計廢除）
 
-GM 系統同決策注入系統係獨立開發嘅系統。本系統定義 Python `Protocol`（`contracts.py`），開發期可以喺進程內 `register_*` 直接注入實作；同時提供 HTTP endpoint（`POST /api/gm/result`）畀外部進程用。兩條路殊途同歸，都係寫 `pending_gm` / 觸發注入。
+Spec 原設計假設 GM 同決策注入係「獨立開發嘅外部系統」，用 `contracts.py` Protocol + `POST /api/gm/result` HTTP 雙軌。**實際落地時兩個系統已實裝喺同一 codebase**：
+
+- GM = `story_weaver.gm.GMDirector`（gm-director 系統）——`RoundRunner` 直接調 `on_round_start / on_round_end / apply_player_choice / generate_finale`；pending 決策由 `gm_state.json` 持有（**唔複製落 `game_ui_state.json`**）。
+- 決策注入 = `GMDirector.apply_player_choice`（記憶注入 + 好感度經 `apply_gm_response`）；故事記錄 = `RecapService`（story-recap 系統）。
+
+因此 `contracts.py` 同 `/api/gm/result` **唔存在**；§2.1 嘅 `timeline` / `pending_gm` / `affinity` 三個欄位由 gm_state / `config["affinity"]` 持有，`GameUIState` 瘦身為純 session 狀態（round / status / cursors / 控制權 / error）。模态嘅故事回顧直接由 `GMDecision.story_timeline` 供應。
+
+另注：`story_weaver/gameui/incremental.py` **唔 import `compress`**——compress 連帶 import `start.py`，而 start.py 喺 import 時 `parse_args()`，非 CLI 環境（Flask / pytest）會炸。frame 常量同 `get_location` 邏輯喺 incremental.py 內本地定義（同 compress 對齊）。
 
 ### 1.6 已知技術債（唔喺本系統處理，記低）
 
@@ -46,7 +53,11 @@ GM 系統同決策注入系統係獨立開發嘅系統。本系統定義 Python 
 
 全部位於 `generative_agents/story_weaver/`。型別用 pydantic v2（`BaseModel`）做邊界校驗，內部流轉用 dataclass。
 
-### 2.1 `models.py` — 數據模型
+### 2.1 `models.py` — 數據模型（✅ 已瘦身，見 §1.5）
+
+實際落地：`story_weaver/gameui/models.py` 只保留 `UIStatus`、`FeedKind`、`DialogueLine`、`FeedItem`、`GameUIState`（純 session 狀態：`session / round / max_rounds / status / sim_step_cursor / steps_per_round / stride / agents / control_owner / control_lease_until / processed_steps / error / updated_at`）。`TimelineNode` / `GMOption` / `GMResult` / `Decision` 等由 `story_weaver.gm.models` 嘅 `TimelineEntry` / `GMOption` / `GMDecision` / `PlayerChoice` 取代。
+
+> 以下原設計碼留檔參考，**未落地**（以 `gameui/models.py` 實碼為準）：
 
 ```python
 from __future__ import annotations
@@ -463,13 +474,9 @@ Request（`Decision` model，choice_id 與 custom_command 互斥）：
 
 - 200 `{"timeline": [TimelineNode...]}`——完整故事回顧數據（modal 用）。
 
-### 3.6 `POST /api/gm/result`（GM 系統用）
+### 3.6 ~~`POST /api/gm/result`~~（✅ 廢除）
 
-Request：`GMResult` + `{"name": "<session>"}`。
-
-- 僅當 status==WAITING_GM 接受：寫入 `pending_gm`，status→WAITING_DECISION → 200 `{"accepted": true}`。
-- 校驗失敗（options <2 或 >3、JSON 爛）→ 400；呢個情況本系統**唔會**自動注入保底選項（保底邏輯只喺進程內 GMProvider 拋異常/超時時觸發，見 §5.4）；外部 GM 要自行重試或 POST 保底選項。
-- 409：status 唔啱（例如已經有 pending_gm）。
+GM 喺進程內（`GMDirector`），唔需要外部 POST 入口，見 §1.5。保底邏輯由 `GMDirector.on_round_end` 嘅 failsafe 決策（`is_failsafe=True`）處理，前端據此只顯示「任由發展」。
 
 ### 3.7 `POST /api/heartbeat`
 
@@ -644,22 +651,24 @@ GMResult(
 
 | 路徑 | 內容 |
 |---|---|
-| `generative_agents/story_weaver/__init__.py` | 空 / package docstring |
-| `generative_agents/story_weaver/models.py` | §2.1 全部 pydantic model |
-| `generative_agents/story_weaver/state_store.py` | §2.2 `GameUIStateStore`、`create_initial_state`、`apply_affinity_deltas` |
-| `generative_agents/story_weaver/incremental.py` | §2.3 `FrameBuffer`、`CompressDelta`、`load_maze` |
-| `generative_agents/story_weaver/round_runner.py` | §2.4 `RoundRunner`、`RecoveryInfo`、`get_config_from_log_tolerant` |
-| `generative_agents/story_weaver/contracts.py` | §2.5 `GMProvider` / `DecisionInjector` Protocol + registry |
-| `generative_agents/story_weaver/game_server.py` | §3 全部 route；`if __name__ == "__main__": app.run(port=5001, threaded=True)` |
+| `generative_agents/story_weaver/gameui/__init__.py` | package init（**實際落地為 `gameui/` 子套件**，同 gm/ recap/ affinity/ 對稱） |
+| `generative_agents/story_weaver/gameui/models.py` | §2.1 瘦身後嘅 pydantic model |
+| `generative_agents/story_weaver/gameui/state_store.py` | `GameUIStateStore`、`create_initial_state` |
+| `generative_agents/story_weaver/gameui/incremental.py` | `FrameBuffer`、`load_maze`（唔 import compress，見 §1.5 末注） |
+| `generative_agents/story_weaver/gameui/round_runner.py` | `RoundRunner`、`RecoveryInfo`、`scan_checkpoints`（整合 GMDirector + RecapService） |
+| ~~`generative_agents/story_weaver/contracts.py`~~ | ✅ 廢除（§1.5） |
+| `generative_agents/story_weaver/gameui/game_server.py` | §3 routes（冇 /api/gm/result）；一個 app 註冊 setup_bp + affinity_bp + recap_bp + 遊戲 routes；port 5001 |
 | `generative_agents/frontend/templates/game.html` | §4.4 三欄頁面 + 決策 modal + 輪詢 JS |
 | `generative_agents/frontend/templates/game_script.html` | §4.3 Phaser fork |
+| `tests/story_weaver/test_gameui.py` | FrameBuffer / state store / RoundRunner 狀態機 / compress 白名單回歸 |
+| `tests/story_weaver/test_gameui_api.py` | routes schema / 決策流程 / heartbeat / 導出 / 頁面渲染 |
 | `docs/spec/game-ui.md` | 本文件 |
 
 ### 修改
 
 | 路徑 | 改動 | 理由 |
 |---|---|---|
-| **無**（後端 `.py`） | — | 最小侵入原則，見 §1.1 |
+| `generative_agents/compress.py` | 兩處 json filter 白名單化：`file_name.startswith("simulate-")`（同 start.py 對齊） | `gm_state.json` / `story_recap.json` / `game_ui_state.json` / `sim_config.json` 會被舊 filter（`endswith(".json")`）誤拾炸離線回放——Done When「離線流程無退化」嘅必需修復（gm-director / story-recap 引入嘅潛在債） |
 | `generative_agents/data/config.json` | `think.llm` 轉 `provider=openai` + base_url/api_key/model | **由「提示詞繁體化 / LLM 配置系統」負責**，本系統只聲明依賴，唔喺本 spec 範圍內改 |
 
 ### 明確唔掂嘅文件
@@ -699,7 +708,7 @@ GMResult(
 
 ### 7.5 存檔與回放系統（出）
 
-- **兼容承諾**：checkpoint 目錄嘅檔案格式完全唔變（本系統只新增 `game_ui_state.json` 一個檔，離線工具會當佢唔存在——`compress.py:74-76` 同 `start.py:115-117` 都係用「`.json` 結尾且唔係 conversation.json」過濾。**注意**：`game_ui_state.json` 會被呢個過濾規則誤拾！所以離線兼容需要存檔回放系統喺掃描時排除 `game_ui_state.json`——呢個係**存檔回放系統 spec 要處理嘅改動**，本系統喺度聲明呢個交互事實。）
+- **兼容承諾**：checkpoint 目錄嘅檔案格式完全唔變（本系統只新增 `game_ui_state.json` 一個檔）。✅ **已解決**：`compress.py` 兩處掃描 filter 已白名單化（`startswith("simulate-")`），`start.py` 嘅 `get_config_from_log` 亦早已白名單化——任何 metadata json 都唔會被誤拾，離線 `start.py` → `compress.py` → `replay.py` 流程唔受影響（有回歸測試 `test_compress_ignores_metadata_json`）。
 - **導出**：`GET /api/export/story?format=md|json`（§3.8）畀存檔系統做故事紀錄導出。
 - **回放**：`results/compressed/<name>/movement.json` 仍由離線 `compress.py` 全量生成，`replay.py` 照舊可用。
 

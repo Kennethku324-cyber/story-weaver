@@ -72,7 +72,9 @@ def generate_movement(checkpoints_folder, compressed_folder, compressed_file):
     files = sorted(os.listdir(checkpoints_folder))
     json_files = list()
     for file_name in files:
-        if file_name.endswith(".json") and file_name != conversation_file:
+        # [story-weaver] 白名單：只認 simulate checkpoint；
+        # gm_state.json / story_recap.json / game_ui_state.json / sim_config.json 等 metadata 唔入回放
+        if file_name.startswith("simulate-") and file_name.endswith(".json"):
             json_files.append(os.path.join(checkpoints_folder, file_name))
 
     persona_init_pos = dict()
@@ -258,7 +260,8 @@ def generate_report(checkpoints_folder, compressed_folder, compressed_file):
     all_markdown_content = extract_description()
     files = sorted(os.listdir(checkpoints_folder))
     for file_name in files:
-        if (not file_name.endswith(".json")) or (file_name == conversation_file):
+        # [story-weaver] 白名單：只認 simulate checkpoint（同上）
+        if (not file_name.startswith("simulate-")) or (not file_name.endswith(".json")):
             continue
 
         file_path = os.path.join(checkpoints_folder, file_name)
