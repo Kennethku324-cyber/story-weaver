@@ -125,6 +125,9 @@
                   placeholder="例：命令阿珍聽日主動約阿強去玫瑰酒吧傾偈"></textarea>
         <div id="char-count">0 / 500</div>
         <div id="dm-error" class="alert alert-danger" style="display:none; margin-top:.6em"></div>
+        <div id="dm-working" class="alert alert-info" style="display:none; margin-top:.6em">
+          命運注入中……（首次決定要重建引擎，可能等十幾秒，唔好閂頁）
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-default" id="dm-skip">任由發展</button>
@@ -337,6 +340,9 @@ function openDecisionModal(decision) {
 function submitDecision(payload) {
   payload.name = SESSION;
   payload.client_id = clientId;
+  $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", true);
+  $("#dm-error").hide();
+  $("#dm-working").show();
   $.ajax({ url: "/api/decision", method: "POST", contentType: "application/json",
     data: JSON.stringify(payload)
   }).done(function(resp) {
@@ -350,6 +356,9 @@ function submitDecision(payload) {
   }).fail(function(xhr) {
     const msg = (xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.reason)) || "提交失敗，請再試一次。";
     $("#dm-error").text(msg).show();
+  }).always(function() {
+    $("#dm-working").hide();
+    $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", false);
   });
 }
 

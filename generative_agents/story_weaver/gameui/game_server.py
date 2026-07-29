@@ -65,6 +65,7 @@ def get_runner(session: str) -> RoundRunner | None:
             try:
                 runner.init_if_needed()
                 runner.recover()
+                runner.prewarm()  # 背景預建引擎，撳掣唔使等
             except Exception:
                 logger.warning("game_server: %s init/recover 失敗", session, exc_info=True)
             _runners[session] = runner

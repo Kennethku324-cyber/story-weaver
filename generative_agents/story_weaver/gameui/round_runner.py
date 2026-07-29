@@ -89,6 +89,7 @@ class RoundRunner:
         self._gm = gm
         self._recap = recap
         self._server = None
+        self._server_lock = threading.Lock()
         self._server_factory = server_factory  # 測試注入用
         self._thread: threading.Thread | None = None
         self._narrator = None
@@ -223,9 +224,30 @@ class RoundRunner:
         )
 
     def _get_server(self):
-        if self._server is None:
-            self._server = self._build_server()
+        # 鎖住：prewarm 同 start_round 可能同時建 server（GenerativeAgentsMap 係全局單例）
+        with self._server_lock:
+            if self._server is None:
+                self._server = self._build_server()
         return self._server
+
+    def prewarm(self) -> None:
+        """背景預建 SimulateServer（resume 情境）：等玩家撳掣時唔使即場等重建。"""
+        if self._server is not None or self._server_factory is not None:
+            return
+        try:
+            last_step, _, _ = scan_checkpoints(self.folder)
+            if last_step < 1:
+                return  # 新故事：第一個 round 先建
+            threading.Thread(target=self._prewarm_run, daemon=True).start()
+        except Exception:
+            logger.warning("round_runner: prewarm 失敗", exc_info=True)
+
+    def _prewarm_run(self) -> None:
+        try:
+            self._get_server()
+            logger.info("round_runner: %s server 預熱完成", self.session)
+        except Exception:
+            logger.warning("round_runner: %s server 預熱失敗", self.session, exc_info=True)
 
     def start_round(self) -> int:
         """開下一回合。status 唔啱 / 已有推演 → RoundBusyError。返回回合編號。"""
