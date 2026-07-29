@@ -63,8 +63,8 @@ class SimulateServer:
         # checkpoint 簡體偵測：舊簡體 checkpoint 唔做靜默轉換（PRD 邊界 3），只 warning
         if _contains_simplified_text(conversation) or _contains_simplified_text(config):
             self.logger.warning(
-                "偵測到簡體 checkpoint，建議運行 python scripts/localization/migrate_checkpoint.py %s",
-                checkpoints_folder,
+                "偵測到簡體 checkpoint，建議運行 python scripts/localization/migrate_checkpoint.py "
+                + str(checkpoints_folder)
             )
 
         # 创建游戏
