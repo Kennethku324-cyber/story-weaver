@@ -231,13 +231,10 @@ class RoundRunner:
         return self._server
 
     def prewarm(self) -> None:
-        """背景預建 SimulateServer（resume 情境）：等玩家撳掣時唔使即場等重建。"""
+        """背景預建 SimulateServer：等玩家撳掣時唔使即場等重建（新舊故事都做）。"""
         if self._server is not None or self._server_factory is not None:
             return
         try:
-            last_step, _, _ = scan_checkpoints(self.folder)
-            if last_step < 1:
-                return  # 新故事：第一個 round 先建
             threading.Thread(target=self._prewarm_run, daemon=True).start()
         except Exception:
             logger.warning("round_runner: prewarm 失敗", exc_info=True)
@@ -250,7 +247,8 @@ class RoundRunner:
             logger.warning("round_runner: %s server 預熱失敗", self.session, exc_info=True)
 
     def start_round(self) -> int:
-        """開下一回合。status 唔啱 / 已有推演 → RoundBusyError。返回回合編號。"""
+        """開下一回合。status 唔啱 / 已有推演 → RoundBusyError。返回回合編號。
+        server 建造同 GM 準備全部喺背景線程做，API 即刻返（前端即見「推演中」）。"""
         state = self.store.load()
         if state.status == UIStatus.FINISHED:
             raise RoundBusyError("故事已完結")
@@ -263,14 +261,11 @@ class RoundRunner:
 
         round_no = state.round + 1
         try:
-            server = self._get_server()
-            gm = self._get_gm()
-            gm.on_round_start(server)
             with self.store.mutate() as s:
                 s.status = UIStatus.SIMULATING
                 s.error = None
             self._thread = threading.Thread(
-                target=self._run_round, args=(server, round_no), daemon=True
+                target=self._run_round, args=(round_no,), daemon=True
             )
             self._thread.start()
             return round_no
@@ -278,8 +273,11 @@ class RoundRunner:
             RoundRunner._global_sim_lock.release()
             raise
 
-    def _run_round(self, server, round_no: int) -> None:
+    def _run_round(self, round_no: int) -> None:
         try:
+            server = self._get_server()
+            gm = self._get_gm()
+            gm.on_round_start(server)
             steps = self.steps_per_round()
             state = self.store.load()
             server.simulate(steps, state.stride)
