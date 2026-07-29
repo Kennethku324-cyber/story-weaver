@@ -64,6 +64,7 @@ class StoryBuilder:
         static_root: str,
         checkpoints_root: str,
         data_config_path: str = "data/config.json",
+        story_agents_root: str | None = None,
     ) -> None:
         self.catalog = catalog
         self.housing = housing
@@ -71,6 +72,10 @@ class StoryBuilder:
         self.static_root = static_root
         self.checkpoints_root = checkpoints_root
         self.data_config_path = data_config_path
+        # 故事角色目錄（同模板畫廊分開，避免撞名同污染）
+        self.story_agents_root = story_agents_root or os.path.join(
+            os.path.dirname(catalog.agents_root.rstrip("/")), "story_agents"
+        )
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -93,14 +98,9 @@ class StoryBuilder:
             else:
                 seen[name] = idx
 
-        # 2) 同現有角色目錄撞名（含 25 個模板同已生成角色；空格會轉底線）
-        existing_dirs = self.catalog.existing_dir_names()
-        for idx, name in enumerate(display_names):
-            if name.replace(" ", "_") in existing_dirs:
-                errors.append(FieldError(
-                    field=f"characters[{idx}].display_name",
-                    message=f"角色名「{name}」同現有角色撞咗，唔該改過",
-                ))
+        # 2) 角色名只限同一 payload 內唔准重複。
+        # 故事角色寫入獨立 story_agents 目錄（唔係模板畫廊），
+        # 所以可以同模板同名（梅就係梅）、同其他故事嘅角色同名。
 
         # 3) 逐角色：模板存在、素材完整、住所合法
         for idx, char in enumerate(req.characters):
@@ -232,11 +232,14 @@ class StoryBuilder:
             sim_config_path = os.path.join(story_dir, "sim_config.json")
             self._write_json(sim_config_path, sim_config)
 
-            # 2) 逐角色寫 agent 目錄
+            # 2) 逐角色寫 agent 目錄（story_agents/<故事>/<角色>，唔掂模板畫廊）
+            story_agent_dir = os.path.join(self.story_agents_root, req.story_name)
+            os.makedirs(story_agent_dir, exist_ok=True)
+            created.append(story_agent_dir)
             for char in req.characters:
                 template = self.catalog.get(char.template_id)
                 dir_name = char.display_name.replace(" ", "_")
-                agent_dir = os.path.join(self.catalog.agents_root, dir_name)
+                agent_dir = os.path.join(self.story_agents_root, req.story_name, dir_name)
                 os.makedirs(agent_dir)
                 created.append(agent_dir)
                 agent_dirs.append(agent_dir)
@@ -248,7 +251,7 @@ class StoryBuilder:
                         os.path.join(template_dir, asset),
                         os.path.join(agent_dir, asset),
                     )
-                agent_json = self._render_agent_json(char, template, rel_map, req.story_opening)
+                agent_json = self._render_agent_json(char, template, rel_map, req.story_opening, req.story_name)
                 self._write_json(os.path.join(agent_dir, "agent.json"), agent_json)
 
             return BuildResult(
@@ -330,6 +333,7 @@ class StoryBuilder:
         template: CharacterTemplate,
         rel_map: dict[str, dict[str, dict]],
         story_opening: str,
+        story_name: str = "",
     ) -> dict:
         # occupation/personality 可能係模板預填嘅簡體，必須過 to_traditional
         # （s2hk 對已係繁體嘅玩家輸入係 no-op，唔會誤傷）
@@ -341,7 +345,7 @@ class StoryBuilder:
         dir_name = char.display_name.replace(" ", "_")
         return {
             "name": char.display_name,
-            "portrait": f"assets/village/agents/{dir_name}/portrait.png",
+            "portrait": f"assets/village/story_agents/{story_name}/{dir_name}/portrait.png",
             "coord": self._pick_spawn_coord(char.home),
             "currently": prefix + opening,
             "scratch": {
@@ -390,7 +394,7 @@ class StoryBuilder:
             dir_name = char.display_name.replace(" ", "_")
             agents[char.display_name] = {
                 "config_path": os.path.join(
-                    "assets", "village", "agents", dir_name, "agent.json"
+                    "assets", "village", "story_agents", req.story_name, dir_name, "agent.json"
                 ),
                 # checkpoint 持久化：SimulateServer 每 step update(to_dict())
                 # 唔會覆蓋呢個 block，GM 改咗會隨下一步落盤

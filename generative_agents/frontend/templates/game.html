@@ -54,8 +54,7 @@
         <div style="text-align: center; margin: 0.5em;" id="on_screen_det_trigger_container-{{ p }}">
           <a href="javascript:void(0);" id="on_screen_det_trigger-{{ p }}">
             <div style="padding: 0;">
-              {% set image_static = 'assets/village/agents/' ~ p ~ '/portrait.png' %}
-              <img src="{{ url_for('static', filename=image_static) }}" style="width: 32px; padding: 0;">
+              <img src="{{ url_for('static', filename=persona_textures[p].portrait) }}" style="width: 32px; padding: 0;">
               <br>{{ persona_display[p] }}
             </div>
           </a>

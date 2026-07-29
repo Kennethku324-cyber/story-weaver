@@ -134,17 +134,29 @@ def create_app() -> Flask:
         if runner is None:
             return jsonify({"error": f"session 唔存在：results/checkpoints/{name}"}), 404
         state = runner.store.load()
-        persona_init_pos = {}
+        # 角色素材：由 sim_config 嘅 config_path 派生（故事角色喺 story_agents/，
+        # 舊故事可能仲喺 agents/——跟 config_path 就兩邊都啱）
+        persona_init_pos: dict = {}
+        persona_textures: dict = {}
+        try:
+            sim_config = runner._load_sim_config()
+        except Exception:
+            sim_config = {"agents": {}}
         for agent in state.agents:
-            agent_json = os.path.join(
-                runner.static_root, "assets", "village", "agents",
-                agent.replace(" ", "_"), "agent.json",
+            under = agent.replace(" ", "_")
+            config_path = ((sim_config.get("agents") or {}).get(agent) or {}).get(
+                "config_path", os.path.join("assets", "village", "agents", under, "agent.json")
             )
+            agent_dir = os.path.dirname(config_path)
             try:
-                with open(agent_json, "r", encoding="utf-8") as f:
-                    persona_init_pos[agent.replace(" ", "_")] = json.load(f).get("coord", [0, 0])
+                with open(os.path.join(runner.static_root, config_path), "r", encoding="utf-8") as f:
+                    persona_init_pos[under] = json.load(f).get("coord", [0, 0])
             except Exception:
-                persona_init_pos[agent.replace(" ", "_")] = [0, 0]
+                persona_init_pos[under] = [0, 0]
+            persona_textures[under] = {
+                "texture": os.path.join(agent_dir, "texture.png").replace(os.sep, "/"),
+                "portrait": os.path.join(agent_dir, "portrait.png").replace(os.sep, "/"),
+            }
         # 遊戲開始時間 + stride（game_script.html 嘅時鐘用）
         start_datetime = "2024-02-13T09:30:00"
         stride = state.stride
@@ -164,6 +176,7 @@ def create_app() -> Flask:
             persona_names=[a.replace(" ", "_") for a in state.agents],
             persona_display={a.replace(" ", "_"): a for a in state.agents},
             persona_init_pos=persona_init_pos,
+            persona_textures=persona_textures,
             agents_real=state.agents,
             sec_per_step=stride,
             start_datetime=start_datetime,

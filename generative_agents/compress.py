@@ -1,4 +1,5 @@
 import os
+import glob
 import json
 import argparse
 from datetime import datetime
@@ -41,7 +42,12 @@ def insert_frame0(init_pos, movement, agent_name):
     if key not in movement.keys():
         movement[key] = dict()
 
+    # [story-weaver] 故事角色喺 story_agents/<故事>/<角色>/；模板角色喺 agents/
     json_path = f"frontend/static/assets/village/agents/{agent_name}/agent.json"
+    if not os.path.exists(json_path):
+        matches = glob.glob(f"frontend/static/assets/village/story_agents/*/{agent_name}/agent.json")
+        if matches:
+            json_path = sorted(matches)[-1]
     with open(json_path, "r", encoding="utf-8") as f:
         json_data = json.load(f)
         address = json_data["spatial"]["address"]["living_area"]

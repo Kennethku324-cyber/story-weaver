@@ -17,6 +17,7 @@
 	let start_datetime = new Date(Date.parse({{ start_datetime|tojson }}));
 
 	let persona_names = {{ persona_init_pos|tojson }};
+	let persona_textures = {{ persona_textures|tojson }};
 	var spawn_tile_loc = {};
 	for (var key in persona_names) {
 		spawn_tile_loc[key] = persona_names[key];
@@ -72,9 +73,8 @@
 		this.load.tilemapTiledJSON("map", "static/assets/village/tilemap/tilemap.json");
 		this.load.atlas("atlas", "static/assets/village/agents/伊莎貝拉/texture.png", filename="static/assets/village/agents/sprite.json");
 
-		for (var p in persona_names) {
-			image_static = "static/assets/village/agents/" + p + "/texture.png";
-			this.load.atlas(p, image_static, filename="static/assets/village/agents/sprite.json");
+		for (var p in persona_textures) {
+			this.load.atlas(p, "static/" + persona_textures[p].texture, filename="static/assets/village/agents/sprite.json");
 		}
 	}
 

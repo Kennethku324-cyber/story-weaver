@@ -45,8 +45,8 @@ def _read_json(path):
         return json.load(f)
 
 
-def _agent_json(builder, name):
-    return _read_json(os.path.join(builder.catalog.agents_root, name, "agent.json"))
+def _agent_json(builder, name, story="茶餐廳風雲"):
+    return _read_json(os.path.join(builder.story_agents_root, story, name, "agent.json"))
 
 
 # ======================================================================
@@ -213,10 +213,10 @@ class TestNameCollision:
                    for e in errors)
 
     def test_display_name_collides_with_template_dir(self, builder, valid_payload):
-        """邊界 3：display_name 撞 25 個模板目錄（含空格轉底線後撞）。"""
+        """故事角色目錄獨立（story_agents/）：同模板同名係合法嘅（梅就係梅）。"""
         valid_payload["characters"][0]["display_name"] = "模板甲"
         req = SetupCreateRequest.model_validate(valid_payload)
-        assert any(e.field == "characters[0].display_name" for e in builder.validate(req))
+        assert not any(e.field == "characters[0].display_name" for e in builder.validate(req))
 
     def test_display_name_space_underscore_collision(self, builder, valid_payload):
         """「模板 甲」→ 目錄「模板_甲」唔撞「模板甲」；但撞自己生成過嘅角色要拒。"""
@@ -458,8 +458,7 @@ class TestRollback:
             builder.build(valid_request)
         assert exc.value.status == 500
         assert not os.path.exists(os.path.join(builder.checkpoints_root, "茶餐廳風雲"))
-        for name in ("阿欣", "阿強", "阿珍", "阿豪"):
-            assert not os.path.exists(os.path.join(builder.catalog.agents_root, name))
+        assert not os.path.exists(os.path.join(builder.story_agents_root, "茶餐廳風雲"))
         for name in FAKE_TEMPLATES:
             assert os.path.isdir(os.path.join(builder.catalog.agents_root, name))
 
@@ -551,7 +550,7 @@ class TestBuildOutputs:
         """Done When：每個角色目錄有 agent.json + portrait.png + texture.png。"""
         builder.build(valid_request)
         for name in ("阿欣", "阿強", "阿珍", "阿豪"):
-            agent_dir = os.path.join(builder.catalog.agents_root, name)
+            agent_dir = os.path.join(builder.story_agents_root, "茶餐廳風雲", name)
             for f in ("agent.json", "portrait.png", "texture.png"):
                 assert os.path.isfile(os.path.join(agent_dir, f)), f"{name} 缺 {f}"
 
@@ -566,7 +565,7 @@ class TestBuildOutputs:
         assert "living_area" in agent["spatial"]["address"]
         assert "tree" in agent["spatial"]
         assert agent["name"] == "阿欣"
-        assert agent["portrait"] == "assets/village/agents/阿欣/portrait.png"
+        assert agent["portrait"] == "assets/village/story_agents/茶餐廳風雲/阿欣/portrait.png"
         assert isinstance(agent["coord"], list) and len(agent["coord"]) == 2
         assert agent["relationships"]["阿強"] == {"score": 60, "desc": "欣賞佢但唔敢講"}
 
