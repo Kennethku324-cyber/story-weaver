@@ -32,14 +32,7 @@
 - **原子性**：所有寫入行「臨時檔 + `os.replace()`」——先寫 `story_recap.json.tmp.<pid>`，`os.replace()` 係 POSIX 原子操作，kill -9 最多留低一個 `.tmp` 殘檔，主檔永遠係合法 JSON。啟動時清理殘留 `.tmp.*`。
 - **唔用 SQLite / 唔入 LlamaIndex**：呢個係遊戲狀態記錄，唔係語義檢索；append-only JSON 同現有 checkpoint 嘅檔案哲學一致，`get_config_from_log()`（`start.py` 第 111-134 行）只認 `simulate-*.json`，新檔案對 resume 邏輯零影響（第 116 行嘅 filter 只排除 `conversation.json`，但佢用 `endswith(".json")` + 排序後取**最後一個**做 resume 來源 —— 注意：`story_recap.json` 會被第 115-117 行嘅 filter 收埋入 `json_files`！
 
-> **重要修正**：`get_config_from_log()` 第 115-117 行：
-> ```python
-> if file_name.endswith(".json") and file_name != "conversation.json":
->     json_files.append(...)
-> ```
-> `story_recap.json` 會被誤收。雖然排序後 `simulate-*.json` 嘅檔名（`simulate-202402130930.json`）字典序**大過** `story_recap.json`（`'i' < 't'`，`simulate` vs `story`：`s-i` vs `s-t`，`simulate-...` 排最後），`json_files[-1]` 仍然係 simulate 檔，**現時唔會出錯**。但呢個係脆弱嘅隱性依賴（邊個改個檔名就爆）。因此：
-> - `story_recap.json` 檔名保持唔變（字典序安全）；
-> - **並且**喺本系統嘅文件計劃入面加一項對 `start.py` 第 116 行嘅**一行防禦性修改**：`and file_name != "conversation.json" and not file_name.startswith("story_")`。呢個係本系統對現有代碼唯一嘅一行修改，見 §6。
+> **重要修正（已過時）**：`get_config_from_log()` 已於 affinity commit 白名單化（`start.py:146`：`file_name.startswith("simulate-")`），`story_recap.json` 及任何新 metadata json 都唔會被誤收。**本系統對 `start.py` 零改動**，§2.2 嘅一行防禦性修改唔需要做。
 
 ### 1.4 LLM 調用：獨立 `LLMModel` 實例，複用 `create_llm_model`
 
@@ -54,9 +47,9 @@ Prompt 模板**唔入 `Scratch`**（嗰個係 agent 專用，模板函數全部�
 
 `on_round_end()` 同步完成**提取**（讀 checkpoints、去重、寫 `recap_status="pending"`），然後開 `threading.Thread` 做 LLM 敘事生成，完成後再原子寫入更新 status。Flask 喺 threaded mode 下讀取永遠讀到最新檔案。唔用 Celery / 唔用進程池 —— 單機單遊戲進程，thread + 檔案鎖（`threading.Lock`，寫入側先攞鎖）已足夠。
 
-### 1.6 命名事實：角色名係簡體鍵
+### 1.6 命名事實：角色名係繁體鍵（已更新）
 
-代碼庫 25 個 persona 名係簡體（`start.py` 第 12-21 行：`"阿伊莎"`, `"玛丽亚"`…），所有 checkpoint / conversation.json / agent.json 嘅 key 都用呢啲名。本系統內部一律沿用**原鍵**（包括寫入 `story_recap.json`），繁體顯示係 UI 層（localization 系統）嘅責任。本 spec 示例中出現嘅「瑪麗亞」等繁體寫法僅為行文，實際數據以 checkpoint 原鍵為準。
+代碼庫 25 個 persona 名已於 localization commit 全部轉為**繁體**（`start.py`：`"阿伊莎"`, `"瑪麗亞"`…），所有 checkpoint / conversation.json / agent.json 嘅 key 都用呢啲名。本系統內部一律沿用**原鍵**。另注：寫作模板同文案時要用 HK 標準字形（`幹預` 唔係 `干預`、`敍事` 唔係 `敘事`——OpenCC s2hk 會改動嘅字都被 CI gate `scan_simplified.py` 攔截）。
 
 ---
 
@@ -66,30 +59,26 @@ Prompt 模板**唔入 `Scratch`**（嗰個係 agent 專用，模板函數全部�
 
 | 路徑 | 職責 |
 |---|---|
-| `generative_agents/story_weaver/__init__.py` | 套件入口，re-export `RecapService`、`recap_bp` |
-| `generative_agents/story_weaver/models.py` | 全部 dataclass（§3）+ JSON 序列化 |
-| `generative_agents/story_weaver/store.py` | `StoryRecapStore`：原子讀寫 `story_recap.json`、upsert、執行緒鎖、tmp 殘檔清理 |
-| `generative_agents/story_weaver/extractors.py` | `EventExtractor`、`DialogueExtractor`、`MemoryFallbackExtractor`（§4） |
-| `generative_agents/story_weaver/prompts.py` | `RecapPrompt` loader + LLM 輸出嘅 pydantic 校驗模型 |
-| `generative_agents/story_weaver/generator.py` | `RecapGenerator`：分層摘要、LLM 調用、validator callback、模板降級（§5） |
-| `generative_agents/story_weaver/service.py` | `RecapService` 門面：init / on_round_end / record_decision / build_gm_context / get_recap（§7） |
-| `generative_agents/story_weaver/markdown_export.py` | `export_markdown()`：完整故事 markdown 導出（`compress.py` `generate_report()` 嘅敘事化升級） |
-| `generative_agents/story_weaver/api.py` | Flask Blueprint `recap_bp`（§8） |
-| `generative_agents/data/prompts/story_recap_round.txt` | 單回合敘事摘要模板（繁體香港書面語） |
-| `generative_agents/data/prompts/story_recap_cumulative.txt` | 累積回顧模板（繁體香港書面語） |
-| `tests/story_weaver/test_extractors.py` | 事件去重、對話三層解析、位元級對白比對、損毀 checkpoint |
-| `tests/story_weaver/test_store.py` | 原子寫入、upsert、kill 模擬（寫到一半 kill 子進程） |
-| `tests/story_weaver/test_generator.py` | mock LLM 全失敗 → fallback；垃圾輸出 → validator 拒收；分層摘要 token 預算 |
-| `tests/story_weaver/test_api.py` | route schema、分頁、markdown 導出、降級提示欄位 |
+| `generative_agents/story_weaver/recap/__init__.py` | 套件入口，re-export `RecapService`、`recap_bp`（**實際落地為 `story_weaver/recap/` 子套件**，同 `gm/`、`affinity/` 對稱；spec 原本嘅平鋪路徑 `story_weaver/models.py` 等全部對應落入 `recap/`） |
+| `generative_agents/story_weaver/recap/models.py` | 全部 dataclass（§3）+ JSON 序列化 |
+| `generative_agents/story_weaver/recap/store.py` | `StoryRecapStore`：原子讀寫 `story_recap.json`、upsert、執行緒鎖、tmp 殘檔清理 |
+| `generative_agents/story_weaver/recap/extractors.py` | `EventExtractor`、`DialogueExtractor`、`MemoryFallbackExtractor`（§4） |
+| `generative_agents/story_weaver/recap/prompts.py` | `RecapPrompt` loader + LLM 輸出嘅 pydantic 校驗模型 |
+| `generative_agents/story_weaver/recap/generator.py` | `RecapGenerator`：分層摘要、LLM 調用、validator callback、模板降級（§5） |
+| `generative_agents/story_weaver/recap/service.py` | `RecapService` 門面：init / on_round_end / record_decision / build_gm_context / get_recap（§7） |
+| `generative_agents/story_weaver/recap/markdown_export.py` | `export_markdown()`：完整故事 markdown 導出（`compress.py` `generate_report()` 嘅敘事化升級） |
+| `generative_agents/story_weaver/recap/api.py` | Flask Blueprint `recap_bp`（§8） |
+| `generative_agents/data/prompts/story_recap_round.txt` | 單回合敍事摘要模板（繁體香港書面語，HK 標準字形） |
+| `generative_agents/data/prompts/story_recap_cumulative.txt` | 累積回顧模板（繁體香港書面語，HK 標準字形） |
+| `tests/story_weaver/test_recap_extractors.py` | 事件去重、對話三層解析、位元級對白比對、損毀 checkpoint |
+| `tests/story_weaver/test_recap_store.py` | 原子寫入、upsert、tmp 殘檔清理 |
+| `tests/story_weaver/test_recap_generator.py` | mock LLM 全失敗 → fallback；垃圾輸出 → validator 拒收；分層摘要 token 預算 |
+| `tests/story_weaver/test_recap_api.py` | route schema、分頁、markdown 導出、降級提示欄位 |
 | `docs/spec/story-recap.md` | 本文件 |
 
-### 2.2 修改現有文件（只有一處，一行）
+### 2.2 修改現有文件
 
-| 文件 | 行 | 改動 |
-|---|---|---|
-| `generative_agents/start.py` | 第 116 行 | `if file_name.endswith(".json") and file_name != "conversation.json":` → 加 `and not file_name.startswith("story_")`，防止 `story_recap.json` 被 `get_config_from_log()` 誤收（見 §1.3）。呢個係**純防禦**，行為不變。 |
-
-`replay.py`、`modules/` 下面所有文件、`compress.py`：**零改動**。
+**無。** `start.py` 白名單已由 affinity commit 完成（見 §1.3 修正），`replay.py`、`modules/`、`compress.py` 全部零改動。
 
 ---
 
@@ -390,8 +379,8 @@ LLM 全敗時嘅降級輸出 = 純模板拼接：
 
 | # | 文件 | 位置 | 改動 | 理由 |
 |---|---|---|---|---|
-| 1 | `generative_agents/start.py` | 第 116 行 | `get_config_from_log()` 嘅 json filter 加 `and not file_name.startswith("story_")` | 防禦 `story_recap.json` 被誤收為 resume 來源（§1.3）。唯一對現有代碼嘅修改，一行。 |
-| 2 | `generative_agents/data/prompts/` | 新增 2 檔 | `story_recap_round.txt`、`story_recap_cumulative.txt` | 第 30、31 個模板，繁體撰寫，唔入 Scratch。 |
+| 1 | ~~`generative_agents/start.py`~~ | — | ✅ **唔使改**：白名單已實施（`start.py:146`），見 §1.3 修正 | — |
+| 2 | `generative_agents/data/prompts/` | 新增 2 檔 | `story_recap_round.txt`、`story_recap_cumulative.txt` | 第 30、31 個模板，繁體撰寫（HK 標準字形），唔入 Scratch。 |
 | 3 | 遊戲主 server（新，由 game-ui / 回合管理系統擁有） | app 初始化 | `app.register_blueprint(recap_bp)` | 掛 API（§8）。**唔掛 `replay.py`** —— replay 係唯讀回放器，決策 modal 唔喺嗰度。 |
 
 **`SimulateServer.simulate()`（第 71-104 行）零改動。** 回合觸發序列（由回合管理系統執行）：
