@@ -61,11 +61,14 @@
   }
 
   function providerHtml(section, current) {
+    var opts = '<option value="ollama"' + (current === "ollama" ? " selected" : "") + '>ollama（本機）</option>' +
+      '<option value="openai"' + (current === "openai" ? " selected" : "") + '>openai（API key）</option>';
+    if (section === "embedding") {
+      opts += '<option value="hugging_face"' + (current === "hugging_face" ? " selected" : "") +
+        '>hugging_face（本機免 key）</option>';
+    }
     return '<div class="llm-field"><label>Provider</label>' +
-      '<select data-section="' + section + '" data-key="provider">' +
-      '<option value="ollama"' + (current === "ollama" ? " selected" : "") + '>ollama（本機）</option>' +
-      '<option value="openai"' + (current === "openai" ? " selected" : "") + '>openai（API key）</option>' +
-      '</select></div>';
+      '<select data-section="' + section + '" data-key="provider">' + opts + '</select></div>';
   }
 
   function render() {

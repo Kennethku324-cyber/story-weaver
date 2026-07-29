@@ -23,7 +23,7 @@ CONFIG_PATH = os.path.join(GEN_ROOT, "data", "config.json")
 GM_CONFIG_PATH = os.path.join(GEN_ROOT, "data", "gm_config.json")
 
 LLM_KEYS = ("provider", "model", "base_url", "api_key")
-PROVIDERS = ("ollama", "openai")
+PROVIDERS = ("ollama", "openai", "hugging_face")  # hugging_face：本機 embedding，唔使 key/base_url
 
 
 def _read_json(path: str) -> dict:
@@ -66,10 +66,10 @@ def _validate_section(name: str, section: dict) -> str | None:
     """返錯誤訊息；None = 通過。"""
     provider = section.get("provider", "")
     if provider not in PROVIDERS:
-        return f"{name}：provider 必須係 ollama 或 openai"
+        return f"{name}：provider 必須係 ollama、openai 或 hugging_face"
     if not (section.get("model") or "").strip():
         return f"{name}：model 必填"
-    if not (section.get("base_url") or "").strip():
+    if provider != "hugging_face" and not (section.get("base_url") or "").strip():
         return f"{name}：base_url 必填"
     return None
 
@@ -113,10 +113,19 @@ def save_settings(payload: dict) -> list[str]:
 
 
 def test_llm(cfg: dict) -> tuple[bool, str]:
-    """試連線：用 cfg 建 LLM 實例，叫佢講一句嘢。返 (ok, 訊息)。"""
+    """試連線：LLM 叫佢講一句嘢；hugging_face embedding 就 embed 一句嘢。返 (ok, 訊息)。"""
     err = _validate_section("LLM", cfg)
     if err:
         return False, err
+    if cfg.get("provider") == "hugging_face":
+        try:
+            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+            embed = HuggingFaceEmbedding(model_name=cfg["model"])
+            vec = embed.get_text_embedding("連線測試。")
+            return True, f"本機模型載入成功（向量維度 {len(vec)}），唔使 API key。"
+        except Exception as e:
+            return False, f"模型載入失敗：{e}"
     try:
         from pydantic import BaseModel
 
