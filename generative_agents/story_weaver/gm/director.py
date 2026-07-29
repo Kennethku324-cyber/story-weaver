@@ -251,8 +251,13 @@ class GMDirector:
         # 2. 記憶注入
         if choice.type in ("option", "option+custom") and choice.option_id:
             record = self._inject_option(server, round_no, choice.option_id, agents)
-            if record:
-                records.append(record)
+            if record is None:
+                # 選項唔喺 pending 入面（過期/重複提交）→ 拒絕，唔好靜默推進回合
+                return InjectionReport(
+                    ok=False,
+                    message="呢個選項已經過期，請重新打開決策視窗再揀。",
+                )
+            records.append(record)
         if parsed is not None and parsed.feasible:
             record = self._inject_custom(server, round_no, parsed, agents)
             if record:

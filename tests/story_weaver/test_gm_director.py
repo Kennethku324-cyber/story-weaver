@@ -413,3 +413,19 @@ def test_finale_failsafe_when_llm_dead(tmp_path):
     finale = gm.generate_finale(server)
     assert "命運之線" in finale.narrative.ending
     assert len(finale.narrative.character_epilogues) == len(NAMES)
+
+
+def test_apply_expired_option_rejected(tmp_path):
+    """選項唔喺 pending 入面（過期/重複提交）→ 拒絕，回合唔推進。"""
+    llm = FakeLLM({"gm_round_summary": make_analysis()})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    add_conversation(server)
+    gm.on_round_end(server, 1)
+    report = gm.apply_player_choice(server, 1, PlayerChoice(type="option", option_id="Z"))
+    assert report.ok is False
+    assert "過期" in report.message
+    # pending 保留，可以重試
+    assert gm.get_pending_decision() is not None
+    assert all(len(server.game.agents[n].injected) == 0 for n in NAMES)

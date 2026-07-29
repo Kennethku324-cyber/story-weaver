@@ -341,6 +341,7 @@ function submitDecision(payload) {
 }
 
 $("#dm-confirm").on("click", function() {
+  const btn = $(this).prop("disabled", true);
   const payload = {};
   const active = $(".option-card.active").first();
   if (active.length) payload.choice_id = active.data("option-id");
@@ -350,6 +351,7 @@ $("#dm-confirm").on("click", function() {
     payload.affinity_overrides = window._lastSuggestions || [];
   }
   submitDecision(payload);
+  setTimeout(function() { btn.prop("disabled", false); }, 3000);  // 防重複提交
 });
 $("#dm-skip").on("click", function() { submitDecision({}); });
 $("#dm-finish").on("click", function() { submitDecision({ finish: true }); });
