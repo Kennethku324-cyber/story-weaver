@@ -30,6 +30,7 @@
 	let pre_anims_direction;
 	let pre_anims_direction_dict = {};
 	let movement_target = {};
+	let last_applied = {};   // agent -> [x,y] 上一帧套用咗嘅位置（適應式節奏用）
 	let finished = false;
 	let paused = false;
 
@@ -234,6 +235,7 @@
 						let curr_x = all_movement[step][agent_key]["movement"][0];
 						let curr_y = all_movement[step][agent_key]["movement"][1];
 						movement_target[curr_persona_name] = [curr_x * tile_width, curr_y * tile_width];
+						last_applied[agent_key] = [curr_x, curr_y];
 
 						let action = all_movement[step][agent_key]["action"];
 						let act = action.length > 25 ? action.substring(0, 20)+"..." : action;
@@ -286,6 +288,19 @@
 			}
 			execute_count = execute_count_max + 1;
 			step = step + 1;
+
+			// 適應式節奏：下一帧有角色郁就慢（行路睇得舒服），
+			// 全員企定就快放跳過（唔使干等 64 秒先見到郁）
+			let motion = false;
+			if (step in all_movement) {
+				for (let agent_key in all_movement[step]) {
+					let m = all_movement[step][agent_key]["movement"];
+					let last = last_applied[agent_key];
+					if (!last || last[0] !== m[0] || last[1] !== m[1]) { motion = true; break; }
+				}
+			}
+			execute_count_max = motion ? 30 : 3;
+
 			start_datetime = new Date(start_datetime.getTime() + step_size);
 			currentTime.setText(start_datetime.toLocaleTimeString("zh-HK", datetime_options));
 		}
