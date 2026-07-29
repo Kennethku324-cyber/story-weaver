@@ -358,6 +358,7 @@ def create_app() -> Flask:
         data = request.get_json(silent=True) or {}
         name = data.get("name", "")
         client_id = data.get("client_id", "")
+        force = bool(data.get("force", False))
         runner = get_runner(name)
         if runner is None:
             return jsonify({"error": "session 唔存在"}), 404
@@ -365,7 +366,7 @@ def create_app() -> Flask:
         with runner.store.mutate() as s:
             if not client_id:
                 is_owner = False
-            elif s.control_owner in (None, client_id) or s.control_lease_until < now:
+            elif force or s.control_owner in (None, client_id) or s.control_lease_until < now:
                 s.control_owner = client_id
                 s.control_lease_until = now + CONTROL_LEASE_SECONDS
                 is_owner = True

@@ -45,7 +45,9 @@
   </span>
 </div>
 <div id="error-banner"></div>
-<div id="readonly-banner">觀察模式：另一個分頁正在主持此故事。</div>
+<div id="readonly-banner">觀察模式：另一個分頁正在主持此故事。
+  <button id="btn-takeover" style="margin-left:1em;border:1px solid #664d03;background:#fff;border-radius:999px;padding:.1em .8em;cursor:pointer">用呢個分頁主持</button>
+</div>
 
 <div class="row" style="margin:0">
   <div class="col-md-8" style="padding:0">
@@ -377,6 +379,17 @@ function showFinale(finale) {
   $("#finale-export").attr("href", "/api/export/story?name=" + encodeURIComponent(SESSION) + "&format=md");
   $("#finale-modal").modal("show");
 }
+
+// 強制取得控制權（舊分頁殘留租約時用）
+$("#btn-takeover").on("click", function() {
+  $.ajax({ url: "/api/heartbeat", method: "POST", contentType: "application/json",
+    data: JSON.stringify({ name: SESSION, client_id: clientId, force: true })
+  }).done(function(resp) {
+    if (resp.is_owner) {
+      $("#readonly-banner").hide();
+    }
+  });
+});
 
 // ---------------------------------------------------------------- 開始推演
 

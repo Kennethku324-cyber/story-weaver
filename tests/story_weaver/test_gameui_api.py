@@ -157,3 +157,15 @@ def test_game_page_renders(client):
     assert "game-container" in html
     assert "decision-modal" in html
     assert "阿珍" in html
+
+
+def test_heartbeat_force_takeover(client):
+    client.post("/api/heartbeat", json={"name": "s1", "client_id": "tab-a"})
+    # tab-b 正常搶唔到；force 就可以
+    r = client.post("/api/heartbeat", json={"name": "s1", "client_id": "tab-b"})
+    assert r.get_json()["is_owner"] is False
+    r = client.post("/api/heartbeat", json={"name": "s1", "client_id": "tab-b", "force": True})
+    assert r.get_json()["is_owner"] is True
+    # tab-a 之後正常 heartbeat 都搶唔返（租約未過期）
+    r = client.post("/api/heartbeat", json={"name": "s1", "client_id": "tab-a"})
+    assert r.get_json()["is_owner"] is False
