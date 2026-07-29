@@ -189,7 +189,7 @@ class RoundRunner:
             start_step = 0
         return SimulateServer(
             self.session, self.static_root, self.folder, config,
-            start_step=start_step, verbose="warning",
+            start_step=start_step, verbose="warn",
         )
 
     def _get_server(self):
