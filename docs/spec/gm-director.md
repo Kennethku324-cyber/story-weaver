@@ -47,20 +47,17 @@
 2. `modules/` 是 GenerativeAgentsCN 上游代碼，保持原樣方便日後 merge 上游更新；`story_weaver/` 是我方新增層，邊界清晰。
 3. 後續 5 個系統（Setup、回合引擎等）同樣落腳 `story_weaver/`，形成 `story_weaver/{gm,setup,rounds,server,...}` 的統一結構。
 
-### 1.2 對現有代碼的唯一修改：`start.py` 一行
+### 1.2 對現有代碼的修改：`start.py` 白名單（✅ 已實施）
 
-`get_config_from_log()`（`start.py` 第 111-134 行）目前把所有 `.json`（除 `conversation.json`）當成 simulate checkpoint，取文件名排序最後一個。`gm_state.json`、`affinity.json` 放入同一目錄後會被誤認為 checkpoint（按字母序 `simulate-*` > `gm_state` > `affinity`，目前僥倖安全，但屬隱性炸彈）。
-
-**修改**（`start.py` 第 114-117 行）：
+`get_config_from_log()` 的白名單化**已於 affinity commit 完成**（`start.py` 第 146 行）：
 
 ```python
-# 修改前
-if file_name.endswith(".json") and file_name != "conversation.json":
-# 修改後
 if file_name.startswith("simulate-") and file_name.endswith(".json"):
 ```
 
-白名單比黑名單穩健：日後再加任何 metadata json 都不會炸 resume。這是對 `modules/`+`start.py` 的**唯一**改動。
+`gm_state.json` 放入 checkpoints 目錄後不會被誤認為 checkpoint。本系統對 `start.py` **零改動**。
+
+另注：affinity commit 已在 `SimulateServer` 加入 `gm_hook` + `steps_per_round` seam（`start.py` 第 93-94、130-131 行），每回合尾於 simulate loop 內呼叫 `gm_hook(self.game, step)`。此 hook 供 affinity 自動調整使用；**GMDirector 不註冊此 hook**，保持外置 API（`on_round_start`/`on_round_end`），由回合引擎在 `simulate()` 之外呼叫——GM 的 LLM 決策不應阻塞模擬 loop 內部。
 
 ### 1.3 GM 的 LLM 客戶端：復用 `create_llm_model`，獨立實例
 
@@ -72,55 +69,54 @@ if file_name.startswith("simulate-") and file_name.endswith(".json"):
 
 Structured output 路徑：`OpenAILLMModel._completion` 第 81-88 行用 magentic `@prompt(...) -> return_type`，`return_type` 為 pydantic model 時自動走 structured output。注意 magentic 要求 `return_type` 是**函數返回註解**，且現有代碼習慣用 `class XxxResponse(BaseModel): res: ...` 包一層（見 `scratch.py` 第 55-58 行），GM 模板沿用此慣例。
 
-### 1.4 記憶注入：繞過 `_add_concept`，直調 `associate.add_node`
+### 1.4 記憶注入：`_add_concept(poignancy_override=...)`（✅ seam 已由 affinity 建好）
 
-`Agent._add_concept()`（`agent.py` 第 632-656 行）會呼叫 `completion("poignancy_event")` 讓 LLM 評分（1-10 隨機 failsafe），玩家意志可能被評低分而淹沒。故注入走 `Associate.add_node()`（`associate.py` 第 166-194 行，簽名已驗證）：
+affinity commit 已為 `Agent._add_concept()`（`agent.py` 第 647-673 行）加入 `poignancy_override` 參數：傳入即跳過 LLM poignancy 評分（`completion("poignancy_event")` 會讓玩家意志被評低分而淹沒）。GM 注入與 affinity 注入走同一條路徑：
 
 ```python
-agent.associate.add_node(
-    node_type="event",       # 永遠用 "event"，不用 "chat"（見 1.5）
-    event=Event(...),
-    poignancy=8,             # 選項=8，自訂命令=10（邊界情況 7）
-    create=None,             # None → 用當前 timer（add_node 第 175 行處理）
-    expire=None,             # None → create + 30 天（第 176 行）
-    filling=None,
+agent._add_concept(
+    "event",               # 永遠用 "event"（GM 意志是「發生過的事」；affinity 的 "thought" 是內心態度，語義不同，不統一）
+    Event(...),
+    poignancy_override=8,  # 選項=8，自訂命令=10（邊界情況 7）
 )
 ```
 
-`add_node` 內部以 `event.get_describe()` 做 embedding（第 188 行 `self._index.add_node(event.get_describe(), metadata)`），所以 **`describe` 的文字質量直接決定檢索質量**，必須是完整、自包含、繁體書面語的第三人稱句子。
+`_add_concept` 內部調 `Associate.add_node()`（`associate.py` 第 166-194 行），以 `event.get_describe()` 做 embedding（第 188 行），所以 **`describe` 的文字質量直接決定檢索質量**，必須是完整、自包含、繁體書面語的第三人稱句子。
 
 另加 `agent.status["poignancy"] += 20`，推 agent 盡快跨過 `reflect()` 閾值（`agent.py` 第 346 行：`status["poignancy"] < think_config["poignancy_max"]` 則 skip；`config.json` 的 `think.poignancy_max = 150`）。注意 `status` dict 由 `SimulateServer.simulate()` 外層持有並傳入 `agent.think(status, agents)`——但 `Agent.__init__` 第 38 行 `status = {"poignancy": 0}` 是 agent 自身的實例屬性，checkpoint 裡 `config["agents"][名]["status"]` 由 `agent.to_dict()`（第 678-688 行）寫出、resume 時還原。GM 改的是 **agent 實例的 `self.status`**，下一 step checkpoint 自然持久化，無需額外處理。
 
 ### 1.5 注入記憶的語言與謂語規範（防誤觸硬編碼）
 
-已驗證的硬編碼中文字串判斷：
+本地化 commit 已把 `agent.py` 全部硬編碼中文字串常量化到 `modules/prompt/keywords.py`（**繁體香港書面語 SSoT**）。已驗證的關鍵字判斷：
 
 | 位置 | 判斷 | 影響 |
 |---|---|---|
-| `agent.py` 第 111 行 | `plan["describe"] == "sleeping"` or `"睡" in plan["describe"]` | 只作用於 schedule plan，不作用於記憶 concept，注入不受影響 |
-| `agent.py` 第 295 行 | `event.object == "idle"` or `"空闲"` | 只作用於 `percept()` 的 tile event，注入繞過 percept，不受影響 |
-| `agent.py` 第 301 行 | `event.fit(self.name, "对话")` → node_type="chat" | 同上，只在 percept 內 |
-| `agent.py` 第 640-643 行 | `event.fit(None, "is", "idle")` / `fit(None, "此时", "空闲")` → poignancy=1 | **會影響**：雖然我們繞過 `_add_concept`，但為防日後有人改走該路徑，注入 event 的 `predicate/object` **禁用** `is/idle/此时/空闲` 組合 |
-| `agent.py` 第 664-671 行 `is_awake()` | `fit(name, "is", "sleeping")` / `fit(name, "正在", "睡觉")` | 只作用於 `self.action.event`，注入記憶不進 action，不受影響 |
+| `agent.py` 第 121 行 | `plan["describe"] == "sleeping"` or `KW_SLEEP in plan["describe"]`（`"睡"`，簡繁同形） | 只作用於 schedule plan，不作用於記憶 concept，注入不受影響 |
+| `agent.py` 第 305 行 | `event.object == "idle"` or `KW_IDLE`（`"空閒"`） | 只作用於 `percept()` 的 tile event，注入繞過 percept，不受影響 |
+| `agent.py` 第 311 行 | `event.fit(self.name, KW_CHAT)`（`"對話"`）→ node_type="chat" | 同上，只在 percept 內 |
+| `agent.py` 第 658-661 行 | `event.fit(None, "is", "idle")` / `fit(None, KW_AT_THIS_TIME, KW_IDLE)` → poignancy=1 | `poignancy_override` 分支在最前，傳了 override 就不會落到此判斷；但為防日後有人改走無 override 路徑，注入 event 的 `predicate/object` **禁用** `is/idle/此時/空閒` 組合 |
+| `agent.py` `is_awake()` | `fit(name, "is", "sleeping")` / `fit(name, KW_ONGOING, KW_SLEEPING)`（`"睡覺"`） | 只作用於 `self.action.event`，注入記憶不進 action，不受影響 |
 
 規範（寫入 `MemoryInjector` 的 docstring 與 GM prompt）：
 - `subject` = 目標 agent 名（繁體，與 `config["agents"]` key 逐字相同）。
 - `predicate`：選項注入用 `"得知"`；自訂命令用 `"被命運驅使"`。
-- `object` = `""`（空字串，`Event.__init__` 第 17-18 行會 fallback 成 `"空闲"`——**所以必須顯式傳非空值**，統一傳 `"命運的提示"`）。
-- `describe`：完整第三人稱句子，繁體書面語，自包含（含相關角色名），**不得包含**「睡觉」「对话」「空闲」「待开始」四個簡體謂語（`MemoryInjector._validate_describe()` 強制檢查，命中則拒絕注入並記 log）。
+- `object` = 顯式傳 `"命運的提示"`（`Event.__init__` 對空 object 會 fallback 成 `KW_IDLE`，必須避免）。
+- `describe`：完整第三人稱句子，**繁體書面語**，自包含（含相關角色名），**不得包含** `keywords.py` 的保留字：`KW_SLEEPING`（睡覺）、`KW_CHAT`（對話）、`KW_IDLE`（空閒）、`KW_PENDING`（待開始）。`MemoryInjector.FORBIDDEN_TOKENS` **直接引用 `modules.prompt.keywords` 常量**，不自行 hardcode（本地化時跟住改）。命中則拒絕注入並記 log。
 
 ### 1.6 好感度可見化：`scratch.currently` 前綴（不改 `scratch.py`）
 
 PRD 依賴第 4 點給了兩個選項（改 `base_desc` 模板 / 前綴 `currently`）。**選擇前綴 `currently`**，理由：
 
-1. `Scratch._base_desc()`（`scratch.py` 第 30-43 行）已把 `currently` 代入 `base_desc.txt` 模板，前綴方式**零代碼改動**——`scratch.currently` 是普通實例屬性（第 17 行 `self.currently = currently`），外部直接賦值即可。
+1. `Scratch._base_desc()`（`scratch.py` 第 30-43 行）已把 `currently` 代入 `base_desc.txt` 模板，前綴方式**零代碼改動**——`scratch.currently` 是普通實例屬性（第 18 行 `self.currently = currently`），外部直接賦值即可。
 2. 改模板需動 `base_desc.txt`（屬 Prompt 本地化系統的 29 模板範疇），跨系統改動增加協調成本。
-3. 每回合開始時由回合引擎呼叫 `AffinityStore.apply_to_agents(game.agents)` 重設前綴，覆蓋 agents 自己對 `currently` 的更新（`retrieve_currently` 會改寫它，屬預期——前綴是「回合級快照」，回合內被自然演替覆蓋可接受，下回合再注入）。
+3. 每回合開始時由回合引擎呼叫 `GMDirector.on_round_start()` → 內部 `apply_relations_prefix(game.agents)` 重設前綴，覆蓋 agents 自己對 `currently` 的更新（`retrieve_currently` 會改寫它，屬預期——前綴是「回合級快照」，回合內被自然演替覆蓋可接受，下回合再注入）。
 
-前綴格式（繁體書面語）：
+**實作位置**：`story_weaver/gm/relations.py`（GM 層新模塊），**復用 `story_weaver.affinity.store.AffinityStore`** 讀矩陣（見 2.3），不重寫存儲。前綴堆疊防護：剝離上回合前綴再套新前綴（上回合前綴存 `gm_state.json` 的 `last_relations_prefix` 欄位）。
+
+前綴格式（繁體書面語，band 標籤用 `affinity.models.BANDS`）：
 
 ```
-【人際關係】你對約翰的好感度為 65（信任）；約翰對你的好感度為 45。你對埃迪的好感度為 80（親密）；埃迪對你的好感度為 70。
+【人際關係】你對約翰的好感度為 65（友好）；約翰對你的好感度為 45。你對埃迪的好感度為 80（摯愛/至交）；埃迪對你的好感度為 70。
 ```
 
 ### 1.7 回合增量採集：node_id 快照 diff（不改 simulate loop）
@@ -199,7 +195,8 @@ class GMDirector:
 
 ```python
 class MemoryInjector:
-    FORBIDDEN_TOKENS: tuple[str, ...] = ("睡觉", "对话", "空闲", "待开始")
+    # 直接引用 modules/prompt/keywords.py 常量（本地化 SSoT），不自行 hardcode
+    FORBIDDEN_TOKENS: tuple[str, ...] = (KW_SLEEPING, KW_CHAT, KW_IDLE, KW_PENDING)
 
     def inject(
         self,
@@ -209,34 +206,35 @@ class MemoryInjector:
         poignancy: int,          # 8（選項）| 10（自訂命令）
         poignancy_boost: int = 20,
     ) -> str:                    # 回傳 node_id
-        """直調 agent.associate.add_node(node_type="event", ...)，
-        再 agent.status["poignancy"] += poignancy_boost。
-        describe 含 FORBIDDEN_TOKENS 或 agent 瞓覺都照注（邊界 8），
-        但前者拋 ValueError（上層捕獲並記 log）。"""
+        """調 agent._add_concept("event", event, poignancy_override=poignancy)
+        （agent.py:647，跳過 LLM 評分），再 agent.status["poignancy"] += poignancy_boost。
+        describe 含 FORBIDDEN_TOKENS 時拋 ValueError（上層捕獲並記 log）；
+        agent 瞓覺都照注（邊界 8）。"""
 ```
 
-### 2.3 `story_weaver/gm/affinity.py`
+### 2.3 好感度：復用 `story_weaver/affinity/store.py`（✅ 已存在，不新建）
+
+affinity 系統已實作 `AffinityStore`（`story_weaver/affinity/store.py`），存儲於 **`config["affinity"]` 頂層 key**（in-place 修改，隨 `SimulateServer.simulate()` 每 step 的 checkpoint dump 自動持久化，`get_config_from_log()` resume 自動還原）。**GM 不建獨立 `affinity.json`**——雙寫會造成 checkpoint 與 json 檔不同步。
+
+GM 消費方式：
+
+- **讀**：`AffinityStore(config["affinity"], agent_names)` 包住 server config 的引用；`store.get(from, to).value`、`store.to_dict()`。
+- **寫（GM 調整）**：`GMRoundAnalysis.suggested_affinity_changes` → 轉 `GMAdjustmentItem` → 經 `story_weaver.affinity.gm.apply_gm_response()` 落地（白名單過濾、雙重 clamp、變動記憶注入、rounds log 全套已有，**接入不重寫**）。
+- **寫（玩家 slider）**：`apply_player_choice` 的 `affinity_overrides` 同樣轉 `GMAdjustmentItem` 行 `apply_gm_response`。
+- **前綴**：`story_weaver/gm/relations.py` 新增 `render_relations_block(store, agent_name)` 與 `apply_relations_prefix(store, agents, state)`（含剝離上回合前綴防堆疊，見 1.6）。
 
 ```python
-class AffinityStore:
-    MIN, MAX = -100, 100
+# story_weaver/gm/relations.py
+def render_relations_block(store: "AffinityStore", agent_name: str) -> str:
+    """生成 1.6 節的【人際關係】前綴文字。全部關係皆 0 時回空字串。"""
 
-    def __init__(self, path: str, agent_names: list[str]) -> None: ...
-    def get(self, from_agent: str, to_agent: str) -> int: ...       # 缺邊預設 0
-    def matrix(self) -> dict[str, dict[str, int]]: ...
-    def apply_delta(self, from_agent: str, to_agent: str, delta: int, reason: str) -> "AffinityChange":
-        """寫入前 clamp（邊界 5）：new = max(-100, min(100, old + delta))。
-        即時 flush 到 affinity.json。回傳含 new_value 的 AffinityChange。"""
-    def set_value(self, from_agent: str, to_agent: str, value: int) -> "AffinityChange":
-        """玩家手動 slider 用，同樣 clamp。"""
-    def render_relations_block(self, agent_name: str) -> str:
-        """生成 1.6 節的【人際關係】前綴文字。"""
-    def apply_to_agents(self, agents: dict[str, "Agent"]) -> None:
-        """對每個 agent：scratch.currently = render_relations_block(name) + "\\n" + 原 currently。
-        用 gm_state 記錄上回合前綴以便剝離，避免前綴無限堆疊。"""
-    def save(self) -> None: ...
-    @classmethod
-    def load(cls, path: str, agent_names: list[str]) -> "AffinityStore": ...
+def apply_relations_prefix(
+    store: "AffinityStore",
+    agents: dict[str, "Agent"],
+    last_prefixes: dict[str, str],   # gm_state["last_relations_prefix"]，用於剝離
+) -> dict[str, str]:                 # 回傳本回合前綴（落 gm_state 供下回合剝離）
+    """對每個 agent：剝離 last_prefixes[name]（若 currently 以它開頭），
+    再 scratch.currently = 新前綴 + "\\n" + 剩餘 currently。"""
 ```
 
 ### 2.4 `story_weaver/gm/state.py`
@@ -420,24 +418,19 @@ class Finale(BaseModel):
 {
   "version": 1,
   "story_seed": "玩家填的開端原文",
-  "agent_names": ["梅", "約翰", "埃迪", "简"],
+  "agent_names": ["梅", "約翰", "埃迪", "簡"],
   "timeline": [ "<TimelineEntry JSON>" ],
   "pending_decision": null,
   "injection_log": [ "<InjectionRecord JSON>" ],
   "branch_point_history": ["..."],
   "round_baseline": null,
+  "last_relations_prefix": {"梅": "【人際關係】..."},
   "finale": null,
   "errors": [{"round": 3, "stage": "round_summary", "error": "...", "at": "20260728-21:04"}]
 }
 ```
 
-**`results/checkpoints/<name>/affinity.json`**：
-
-```json
-{"梅": {"約翰": 50, "埃迪": 80}, "約翰": {"梅": 45}}
-```
-
-缺邊語義 = 0（中性）。只有出現過變動或 Setup 顯式設定的邊才會落盤。
+**好感度存儲**：`config["affinity"]`（`simulate-*.json` checkpoint 內），由 affinity 系統持有，格式見 `docs/spec/affinity.md`。缺邊語義 = 0（中性）。
 
 ---
 
@@ -445,13 +438,13 @@ class Finale(BaseModel):
 
 | # | 文件 | 位置 | 改動 | 侵入度 |
 |---|---|---|---|---|
-| 1 | `generative_agents/start.py` | 第 114-117 行 `get_config_from_log()` | 黑名單改白名單：`file_name.startswith("simulate-") and file_name.endswith(".json")` | **唯一一行代碼修改** |
-| 2 | `generative_agents/start.py` | 無 | `simulate()` 零改動。GM 只在其**外**被回合引擎呼叫：`server.simulate(N, stride)` 前 `gm.on_round_start(server)`，後 `gm.on_round_end(server, round_no)` | 零 |
-| 3 | `generative_agents/modules/agent.py` | 無 | 零改動。注入走實例屬性：`agent.associate.add_node(...)`（`associate.py` 166-194）、`agent.status["poignancy"] += 20`、`agent.scratch.currently = ...` | 零 |
+| 1 | `generative_agents/start.py` | 第 146 行 `get_config_from_log()` | ✅ 已白名單化（affinity commit），本系統零改動 | 零 |
+| 2 | `generative_agents/start.py` | 無 | `simulate()` 零改動。GM 只在其**外**被回合引擎呼叫：`server.simulate(N, stride)` 前 `gm.on_round_start(server)`，後 `gm.on_round_end(server, round_no)`。已有的 `gm_hook` seam（第 93-94、130-131 行）歸 affinity 自動調整用，GMDirector 不註冊 | 零 |
+| 3 | `generative_agents/modules/agent.py` | 無 | 零改動。注入走實例方法：`agent._add_concept("event", ..., poignancy_override=N)`（第 647-673 行）、`agent.status["poignancy"] += 20`、`agent.scratch.currently = ...` | 零 |
 | 4 | `generative_agents/modules/prompt/scratch.py` | 無 | 零改動（選了 currently 前綴方案，見 1.6） | 零 |
 | 5 | `generative_agents/modules/model/llm_model.py` | 無 | 零改動，`create_llm_model()` 直接用 | 零 |
-| 6 | `results/checkpoints/<name>/` | 目錄 | 新增 `gm_state.json`、`affinity.json` 兩個檔案（與 `simulate-*.json`、`conversation.json`、`storage/` 並列） | 新增檔案 |
-| 7 | `generative_agents/data/prompts_gm/` | 新目錄 | 3 個繁體模板，GM 自己讀取，不經 `Scratch.build_prompt`（Scratch 寫死 `data/prompts`，`scratch.py` 第 19 行） | 新增目錄 |
+| 6 | `results/checkpoints/<name>/` | 目錄 | 新增 `gm_state.json` 一個檔案（好感度存 `config["affinity"]`，隨 `simulate-*.json` 走） | 新增檔案 |
+| 7 | `generative_agents/data/prompts_gm/` | 新目錄 | 3 個繁體模板，GM 自己讀取，不經 `Scratch.build_prompt`（Scratch 寫死 `data/prompts`，`scratch.py` 第 19 行）。GM 專屬模板集中此處；`data/prompts/gm_adjust_affinity.txt` 屬 affinity 系統，不搬 | 新增目錄 |
 
 ### 回合引擎呼叫時序（契約，實作屬回合引擎系統）
 
@@ -476,12 +469,11 @@ report = gm.apply_player_choice(server, round_no, choice)
 
 | 路徑 | 內容 |
 |---|---|
-| `generative_agents/story_weaver/__init__.py` | 空 package init |
-| `generative_agents/story_weaver/gm/__init__.py` | re-export `GMDirector`, `GMDecision`, `PlayerChoice` |
+| `generative_agents/story_weaver/gm/__init__.py` | re-export `GMDirector`, `GMDecision`, `PlayerChoice`（`story_weaver/__init__.py` 已存在） |
 | `generative_agents/story_weaver/gm/director.py` | `GMDirector`（2.1） |
 | `generative_agents/story_weaver/gm/models.py` | 全部 pydantic 模型（3.1、3.2） |
 | `generative_agents/story_weaver/gm/state.py` | `GMStateStore`（2.4） |
-| `generative_agents/story_weaver/gm/affinity.py` | `AffinityStore`（2.3） |
+| `generative_agents/story_weaver/gm/relations.py` | `render_relations_block` / `apply_relations_prefix`（1.6、2.3；復用 affinity 的 AffinityStore） |
 | `generative_agents/story_weaver/gm/injector.py` | `MemoryInjector`（2.2、1.5） |
 | `generative_agents/story_weaver/gm/delta.py` | `RoundDeltaCollector`, `RoundBaseline`, `RoundDelta`（2.5） |
 | `generative_agents/story_weaver/gm/prompter.py` | 模板載入 + prompt 組裝（string.Template，同 `scratch.py` 手法），輸出 `LLMModel.completion()` 所需的 prompt + return_type |
@@ -489,19 +481,15 @@ report = gm.apply_player_choice(server, round_no, choice)
 | `generative_agents/data/prompts_gm/gm_custom_command.txt` | 繁體模板：自訂命令解析（約束：當前角色名單、feasible 判斷） |
 | `generative_agents/data/prompts_gm/gm_finale.txt` | 繁體模板：終章敘事 + 角色結局 |
 | `generative_agents/data/gm_config.json` | `{"llm": {...openai 兼容配置...}, "option_poignancy": 8, "custom_poignancy": 10, "poignancy_boost": 20, "max_rounds": 10, "min_rounds_to_finish": 2}` |
-| `generative_agents/tests/story_weaver/test_gm_director.py` | Done When 各項測試（mock LLM） |
-| `generative_agents/tests/story_weaver/test_gm_affinity.py` | clamp、前綴注入、持久化 |
-| `generative_agents/tests/story_weaver/test_gm_state.py` | 原子寫入、損毀恢復、pending 決策逐字重現 |
-| `generative_agents/tests/story_weaver/test_gm_injector.py` | 注入後 `retrieve_events` 可檢索、FORBIDDEN_TOKENS 攔截 |
+| `tests/story_weaver/test_gm_director.py` | Done When 各項測試（mock LLM）。測試目錄已存在（affinity tests 同層），沿用 repo root `tests/` |
+| `tests/story_weaver/test_gm_relations.py` | 前綴渲染、剝離防堆疊、空矩陣 |
+| `tests/story_weaver/test_gm_state.py` | 原子寫入、損毀恢復、pending 決策逐字重現 |
+| `tests/story_weaver/test_gm_injector.py` | 注入後 `retrieve_events` 可檢索、FORBIDDEN_TOKENS 攔截 |
 | `docs/spec/gm-director.md` | 本文件 |
 
 ### 修改
 
-| 路徑 | 改動 |
-|---|---|
-| `generative_agents/start.py` | 第 114-117 行白名單化（整合點 #1，一行） |
-
-**無其他現有文件需要修改。**
+**無現有文件需要修改。**（`start.py` 白名單已由 affinity commit 完成）
 
 ---
 
@@ -512,7 +500,7 @@ report = gm.apply_player_choice(server, round_no, choice)
 | 契約 | 內容 |
 |---|---|
 | `GMStateStore.init_new(story_seed, agent_names)` | Setup 完成後呼叫一次，寫入故事開端與角色名單 |
-| `affinity.json` 初始值 | Setup 依玩家填的雙向好感度寫入首版（格式見 3.3）；之後所有權移交 GM |
+| `config["affinity"]` 初始值 | Setup 依玩家填的雙向好感度寫入模擬 config（affinity 系統 `SetupAffinityResult`）；之後所有權移交 GM（經 `apply_gm_response`） |
 | 角色名單即真相 | `agent_names` 用於 `gm_custom_command` 的 targets 約束與 `AffinityStore` 邊校驗；GM 假設回合中角色不增不減 |
 | GM 只讀 `agent.json` 的 `scratch`（職業/性格經 `base_desc` 自然進入 agents 的 LLM context），永不寫 | scratch 是「角色原點」 |
 
@@ -539,10 +527,10 @@ report = gm.apply_player_choice(server, round_no, choice)
 
 | 契約 | 內容 |
 |---|---|
-| 檔案所有權 | `gm_state.json`、`affinity.json` 歸 GM 系統寫、存檔系統負責備份/搬運（如壓縮歸檔）；GM 提供 `GMStateStore.load/save`、`AffinityStore.load/save` |
+| 檔案所有權 | `gm_state.json` 歸 GM 系統寫、存檔系統負責備份/搬運（如壓縮歸檔）；GM 提供 `GMStateStore.load/save`。好感度隨 `simulate-*.json` checkpoint 走（`config["affinity"]`），無獨立檔案 |
 | resume 流程 | 存檔系統載入 `simulate-*.json`（經 `get_config_from_log`）後，由回合引擎 `GMDirector.resume()` 載入 GM 狀態；`get_pending_decision()` 非空 → 通知前端重開 modal |
 | 損毀降級 | `gm_state.json` 損毀 → 從零開始 + errors 記錄；LlamaIndex storage 損毀 → 由存檔系統重建空索引，GM 的 timeline 不受影響，下一回合 `had_error=True` 並在摘要提示「小鎮的記憶出現了裂縫」（邊界 4） |
-| `start.py` 白名單修改 | 存檔系統任何新 metadata json 都不需再動 `get_config_from_log` |
+| `start.py` 白名單 | ✅ 已實施（`start.py:146`），存檔系統任何新 metadata json 都不需再動 `get_config_from_log` |
 
 ### 6.5 ← Prompt 本地化系統（前置依賴）
 
@@ -550,7 +538,7 @@ report = gm.apply_player_choice(server, round_no, choice)
 |---|---|
 | GM 3 模板直接以繁體撰寫 | 不依賴本地化系統，可先行 |
 | 29 模板簡轉繁必須先於或同步上線 | GM 注入的繁體 describe 會進入 `retrieve_focus` 檢索結果，餵給簡體模板會簡繁混雜（PRD 依賴第 6 點） |
-| 禁詞清單共享 | `MemoryInjector.FORBIDDEN_TOKENS = ("睡觉", "对话", "空闲", "待开始")` 與本地化規範對齊——這四個是 agent.py 硬編碼保留字，**本地化時不得翻譯它們**（翻譯即炸 `is_awake()`/`percept()` 判斷），其餘系統謂語亦同 |
+| 禁詞清單共享 | `MemoryInjector.FORBIDDEN_TOKENS` 直接引用 `modules/prompt/keywords.py` 的 `KW_SLEEPING/KW_CHAT/KW_IDLE/KW_PENDING`（本地化 SSoT，✅ 29 模板簡轉繁已完成）——這些保留字是 agent.py 邏輯判斷依賴，**永不得翻譯或改寫** |
 
 ---
 
@@ -562,7 +550,7 @@ report = gm.apply_player_choice(server, round_no, choice)
 | 故事回顧正確 | `test_gm_state.py::test_timeline_accumulates_10_rounds`（對白逐字比對 conversation.json） |
 | 記憶注入生效 | `test_gm_injector.py::test_inject_retrievable`（注入後 `retrieve_events("關鍵字")` 命中 + `status["poignancy"]` +20） |
 | 自訂命令 F1 | `test_gm_director.py::test_parse_command_20_cases`（mock LLM 回固定 parse，校驗 targets 抽取邏輯與名單約束） |
-| 好感度 clamp | `test_gm_affinity.py::test_clamp_and_render` |
+| 好感度 clamp | `test_affinity_gm.py`（✅ affinity 已有，雙重 clamp + 白名單）+ `test_gm_relations.py::test_render_and_prefix`（前綴渲染/剝離） |
 | 失敗安全 | `test_gm_director.py::test_llm_total_failure_failsafe`（mock `completion` 全回 None → `is_failsafe=True`、流程完成、error 入 log） |
 | 決策持久化 | `test_gm_state.py::test_pending_decision_roundtrip`（set → save → load → 逐字相等） |
 | 語言 | `test_gm_injector.py::test_forbidden_tokens_rejected` + prompt 模板人工 review checklist |
@@ -579,4 +567,4 @@ report = gm.apply_player_choice(server, round_no, choice)
 | LlamaIndex node_id 在 resume 後是否穩定（快照 diff 依賴） | node_id 存於 `storage/` 持久化（`Associate.to_dict` → `_index.save()`，`associate.py` 第 256-258 行），resume 後一致；baseline 亦落盤 `gm_state.json`，雙保險 |
 | magentic structured output 對複雜巢狀 model 相容性 | `GMRoundAnalysis` 巢狀三層，屬 magentic 支援範圍；若實測不穩，降級為單層 `res: str`（JSON 字串）+ GM 內部 `model_validate_json` 自行解析（`OllamaLLMModel._completion` 第 144-165 行已有此 fallback 手法可參考） |
 | 同步阻塞的 `/api/round/start` 令 Flask 單線程卡死其他請求 | 由回合引擎決定 background thread 化；GM API 兩種模式兼容（2.6） |
-| 玩家注入與 29 簡體模板並存期的簡繁混雜 | 上線順序硬性約束：本地化先行（6.5） |
+| 玩家注入與模板語言混雜 | ✅ 已解除：29 模板簡轉繁完成（localization commit），注入的繁體 describe 與模板語境一致 |
