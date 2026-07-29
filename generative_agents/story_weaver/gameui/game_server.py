@@ -84,6 +84,8 @@ def create_app() -> Flask:
         static_folder=os.path.join(GEN_ROOT, "frontend", "static"),
         static_url_path="/static",
     )
+    # 開發期：模板改咗即時生效，唔使重啟 server
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.register_blueprint(setup_bp)
     app.register_blueprint(affinity_bp)
     configure_recap(RecapService(checkpoints_root=_checkpoints_root()))

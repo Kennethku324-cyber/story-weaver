@@ -97,6 +97,10 @@
         <h4 class="modal-title">第 <span id="dm-round"></span> 回合結束 — 輪到你落子</h4>
       </div>
       <div class="modal-body">
+        <div id="dm-readonly" class="alert alert-warning" style="display:none">
+          你而家係觀察模式，唔可以落子。
+          <button class="btn btn-warning btn-sm" id="dm-takeover">用呢個分頁主持</button>
+        </div>
         <div id="dm-failsafe" class="alert alert-warning" style="display:none">命運之線暫時模糊……今回合只有「任由發展」。</div>
         <h5><b>故事回顧</b></h5>
         <div id="story-review"></div>
@@ -156,7 +160,7 @@
 const SESSION = {{ session|tojson }};
 const AGENTS = {{ agents_real|tojson }};
 const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
-let sinceFrame = 0, sinceFeed = 0, modalOpen = false, isOwner = false;
+let sinceFrame = 0, sinceFeed = 0, modalOpen = false, isOwner = false, isReadonly = false;
 
 const STATUS_TEXT = {
   idle: "待命", simulating: "推演中…", waiting_decision: "等待你嘅決定",
@@ -187,6 +191,11 @@ function pollState() {
     else { $("#error-banner").hide(); }
 
     $("#readonly-banner").toggle(resp.readonly === true);
+    isReadonly = resp.readonly === true;
+    if (modalOpen) {  // modal 開緊都要即時反映控制權變化
+      $("#dm-readonly").toggle(isReadonly);
+      $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", isReadonly);
+    }
     $("#btn-round").prop("disabled",
       resp.readonly || resp.status === "simulating" ||
       resp.status === "waiting_decision" || resp.status === "finished");
@@ -269,6 +278,8 @@ function openDecisionModal(decision) {
   $("#dm-round").text(decision.round_no);
   $("#dm-summary").text(decision.summary || "");
   $("#dm-failsafe").toggle(decision.is_failsafe === true);
+  $("#dm-readonly").toggle(isReadonly === true);
+  $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", isReadonly === true);
 
   // 故事回顧（對白原文）
   const review = $("#story-review").empty();
@@ -381,15 +392,20 @@ function showFinale(finale) {
 }
 
 // 強制取得控制權（舊分頁殘留租約時用）
-$("#btn-takeover").on("click", function() {
+function takeOver() {
   $.ajax({ url: "/api/heartbeat", method: "POST", contentType: "application/json",
     data: JSON.stringify({ name: SESSION, client_id: clientId, force: true })
   }).done(function(resp) {
     if (resp.is_owner) {
+      isReadonly = false;
       $("#readonly-banner").hide();
+      $("#dm-readonly").hide();
+      $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", false);
     }
   });
-});
+}
+$("#btn-takeover").on("click", takeOver);
+$("#dm-takeover").on("click", takeOver);
 
 // ---------------------------------------------------------------- 開始推演
 
