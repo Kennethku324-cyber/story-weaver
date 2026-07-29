@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .llm-wrap { max-width: 760px; margin: 2em auto; font-size: 15px; }
+  .llm-card { border: 1px solid #ddd; border-radius: 8px; padding: 1.2em 1.5em; margin-bottom: 1.5em; }
+  .llm-card h4 { margin-top: 0; }
+  .llm-card .desc { color: #777; font-size: 13px; margin-bottom: 1em; }
+  .llm-field { margin-bottom: .8em; }
+  .llm-field label { display: block; font-weight: bold; margin-bottom: .2em; }
+  .llm-field input, .llm-field select { width: 100%; padding: .45em; border: 1px solid #ccc; border-radius: 5px; }
+  .key-hint { font-size: 12px; color: #999; margin-top: .2em; }
+  .test-result { margin-top: .5em; font-size: 13px; display: none; padding: .5em .8em; border-radius: 5px; }
+  .test-result.ok { display: block; background: #d4edda; color: #155724; }
+  .test-result.fail { display: block; background: #f8d7da; color: #842029; }
+  #save-result { margin-top: 1em; display: none; padding: .6em 1em; border-radius: 5px; }
+  #save-result.ok { display: block; background: #d4edda; color: #155724; }
+  #save-result.fail { display: block; background: #f8d7da; color: #842029; }
+</style>
+
+<div class="llm-wrap">
+  <h3>⚙ LLM 設定</h3>
+  <p style="color:#777">
+    呢度設定故事用嘅語言模型。<b>ollama</b> 係本機免費（要裝咗 Ollama 先）；
+    <b>openai</b> 係任何 OpenAI 兼容 API（DeepSeek、Kimi、OpenAI 等），要填 API key。
+    改完之後<b>新開嘅故事</b>先生效，行緊嘅故事唔受影響。
+  </p>
+
+  <div class="llm-card" data-section="agent_llm">
+    <h4>角色思考 LLM</h4>
+    <p class="desc">驅動每個角色嘅日常諗法、計劃、對白。用量最大，平價模型都做得唔錯。</p>
+    <div class="llm-fields"></div>
+  </div>
+
+  <div class="llm-card" data-section="embedding">
+    <h4>記憶檢索 Embedding</h4>
+    <p class="desc">角色「諗返起」舊事用。如果用 ollama，base_url 留意係 <b>唔加 /v1</b> 嗰個（例如 http://127.0.0.1:11434）。</p>
+    <div class="llm-fields"></div>
+  </div>
+
+  <div class="llm-card" data-section="gm_llm">
+    <h4>GM / 故事回顧 LLM</h4>
+    <p class="desc">每回合寫摘要、出分支選項、寫終章。用呢刻負擔得起最好嘅模型，回合先 call 一次。</p>
+    <div class="llm-fields"></div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-save" style="padding:.6em 2em">儲存全部設定</button>
+  <a href="/" style="margin-left:1em">返主頁</a>
+  <div id="save-result"></div>
+</div>
+
+<script>
+(function () {
+  var SECTIONS = ["agent_llm", "embedding", "gm_llm"];
+  var data = {};
+
+  function fieldHtml(section, key, label, type, hint) {
+    return '<div class="llm-field"><label>' + label + '</label>' +
+      '<input type="' + type + '" data-section="' + section + '" data-key="' + key + '">' +
+      (hint ? '<div class="key-hint">' + hint + '</div>' : '') + '</div>';
+  }
+
+  function providerHtml(section, current) {
+    return '<div class="llm-field"><label>Provider</label>' +
+      '<select data-section="' + section + '" data-key="provider">' +
+      '<option value="ollama"' + (current === "ollama" ? " selected" : "") + '>ollama（本機）</option>' +
+      '<option value="openai"' + (current === "openai" ? " selected" : "") + '>openai（API key）</option>' +
+      '</select></div>';
+  }
+
+  function render() {
+    SECTIONS.forEach(function (s) {
+      var cfg = data[s] || {};
+      var wrap = document.querySelector('[data-section="' + s + '"] .llm-fields');
+      wrap.innerHTML =
+        providerHtml(s, cfg.provider) +
+        fieldHtml(s, "model", "Model", "text") +
+        fieldHtml(s, "base_url", "Base URL", "text") +
+        fieldHtml(s, "api_key", "API key", "password",
+          cfg.api_key_set ? "已設定（" + cfg.api_key_hint + "）。留空 = 唔改。" : "未設定。ollama 可以留空。") +
+        '<button class="btn btn-default btn-sm" data-test="' + s + '">測試連線</button>' +
+        '<span class="test-result" data-result="' + s + '"></span>';
+      wrap.querySelector('[data-key="model"]').value = cfg.model || "";
+      wrap.querySelector('[data-key="base_url"]').value = cfg.base_url || "";
+    });
+    document.querySelectorAll("[data-test]").forEach(function (btn) {
+      btn.addEventListener("click", function () { testSection(btn.getAttribute("data-test")); });
+    });
+  }
+
+  function gather(section) {
+    var cfg = {};
+    document.querySelectorAll('[data-section="' + section + '"][data-key]').forEach(function (el) {
+      cfg[el.getAttribute("data-key")] = el.value;
+    });
+    return cfg;
+  }
+
+  function testSection(section) {
+    var box = document.querySelector('[data-result="' + section + '"]');
+    box.className = "test-result";
+    box.textContent = "測試中……";
+    box.style.display = "block";
+    fetch("/api/settings/llm/test", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(gather(section)),
+    }).then(function (r) { return r.json(); }).then(function (body) {
+      box.className = "test-result " + (body.ok ? "ok" : "fail");
+      box.textContent = body.message;
+    }).catch(function () {
+      box.className = "test-result fail";
+      box.textContent = "網絡錯誤，試唔到。";
+    });
+  }
+
+  document.getElementById("btn-save").addEventListener("click", function () {
+    var payload = {};
+    SECTIONS.forEach(function (s) { payload[s] = gather(s); });
+    var box = document.getElementById("save-result");
+    fetch("/api/settings/llm", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+      .then(function (res) {
+        box.className = res.body.ok ? "ok" : "fail";
+        box.id = "save-result";
+        box.textContent = res.body.ok ? res.body.message : (res.body.errors || ["儲存失敗"]).join("；");
+        box.style.display = "block";
+      });
+  });
+
+  fetch("/api/settings/llm").then(function (r) { return r.json(); }).then(function (body) {
+    data = body;
+    render();
+  });
+})();
+</script>
+{% endblock content %}

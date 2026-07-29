@@ -25,6 +25,7 @@ from story_weaver.recap.service import RecapService
 from story_weaver.routes import setup_bp
 
 from .models import UIStatus
+from .llm_settings import load_settings, save_settings, test_llm
 from .round_runner import RoundBusyError, RoundRunner
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,33 @@ def create_app() -> Flask:
             "<p><a href='/setup' style='display:inline-block;padding:.7em 1.8em;"
             "background:#b3541e;color:#fff;border-radius:999px;text-decoration:none;"
             "font-weight:bold'>開始新故事</a></p>"
+            "<p style='margin-top:1em'><a href='/settings' style='color:#888'>⚙ LLM 設定</a></p>"
             "</div>"
         )
+
+    # ---------------------------------------------------------------- LLM 設定
+
+    @app.get("/settings")
+    def settings_page():
+        return render_template("settings.html")
+
+    @app.get("/api/settings/llm")
+    def api_settings_get():
+        return jsonify(load_settings())
+
+    @app.post("/api/settings/llm")
+    def api_settings_save():
+        payload = request.get_json(silent=True) or {}
+        errors = save_settings(payload)
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "message": "已儲存。新故事同新一局會用新設定；行緊嘅故事唔受影響。"})
+
+    @app.post("/api/settings/llm/test")
+    def api_settings_test():
+        cfg = request.get_json(silent=True) or {}
+        ok, message = test_llm(cfg)
+        return jsonify({"ok": ok, "message": message})
 
     @app.get("/game")
     def game():
