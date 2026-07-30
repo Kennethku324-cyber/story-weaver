@@ -166,3 +166,5 @@ cython_debug/
 
 .claude/
 checkpoints/
+generative_agents/data/config.json
+generative_agents/data/gm_config.json
