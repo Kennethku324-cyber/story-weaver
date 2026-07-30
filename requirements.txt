@@ -1,10 +1,10 @@
 openai==2.15.0
-llama-index==0.14.12
-llama-index-embeddings-huggingface==0.6.1
-llama-index-embeddings-ollama==0.8.6
-llama-index-embeddings-openai==0.5.1
+llama-index-core>=0.12.0
+llama-index-embeddings-huggingface>=0.4.0
+llama-index-embeddings-ollama>=0.4.0
+llama-index-embeddings-openai>=0.4.0
+sentence-transformers>=2.6.1
 Flask==3.1.2
 magentic==0.41.0
 opencc-python-reimplemented==0.1.7
 gunicorn==23.0.0
-
