@@ -70,6 +70,9 @@ class GMPrompter:
         matrix_text: str = "",
         round_no: int = 1,
         max_rounds: int = 4,
+        dramatic_pressure: int = 1,
+        unresolved_threads: list[str] | None = None,
+        allow_negative_elements: bool = False,
     ) -> GMRoundAnalysis | None:
         """一次 call 出摘要+分支點+選項+好感度建議。全敗 → None（上層行 failsafe）。"""
         try:
@@ -93,6 +96,13 @@ class GMPrompter:
                 round_no=str(round_no),
                 max_rounds=str(max_rounds),
                 ending_pressure=ending_pressure,
+                dramatic_pressure=str(dramatic_pressure),
+                unresolved_threads="\n".join(f"- {thread}" for thread in (unresolved_threads or [])) or "（暫無）",
+                negative_elements_policy=(
+                    "可按故事需要使用負面元素，但避免過度血腥或不適合學生的細節。"
+                    if allow_negative_elements else
+                    "不得加入死亡、暴力傷害、恐怖威脅、霸凌、仇恨或其他負面元素；用安全而建設性的衝突推動故事。"
+                ),
             )
         except Exception:
             logger.warning("gm prompter: round_summary 模板組裝失敗", exc_info=True)

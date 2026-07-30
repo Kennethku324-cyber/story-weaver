@@ -1,6 +1,7 @@
 """narrator + 節奏設定測試。"""
 
 import json
+import os
 
 import pytest
 
@@ -19,13 +20,28 @@ class FakeLLM:
         return self.out
 
 
-TEMPLATE = "/Users/kenneth/Projects/story-weaver/generative_agents/data/prompts_gm/gm_step_narrative.txt"
+TEMPLATE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "generative_agents", "data", "prompts_gm", "gm_step_narrative.txt"))
 
 
 def test_narrate_happy():
     n = StepNarrator(FakeLLM(), template_path=TEMPLATE)
     text = n.narrate("20240213-10:30", ["阿珍喺大街散步"], ["阿珍：「你收埋封信做咩？」"])
     assert "阿珍" in text
+
+
+def test_narrate_includes_story_context():
+    """The live narrator must receive the unresolved story thread."""
+    llm = FakeLLM()
+    n = StepNarrator(llm, template_path=TEMPLATE)
+
+    n.narrate(
+        "20240213-10:30",
+        ["阿珍走到咖啡館"],
+        [],
+        story_context="阿珍仍未決定是否公開阿強藏起來的信。",
+    )
+
+    assert "阿珍仍未決定是否公開阿強藏起來的信。" in llm.calls[0]
 
 
 def test_narrate_llm_none():

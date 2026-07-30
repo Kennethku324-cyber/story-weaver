@@ -127,6 +127,22 @@ def test_branch_point_history(tmp_path):
     assert store.data["branch_point_history"] == ["轉折一", "轉折三"]
 
 
+def test_dramatic_pressure_tracks_unresolved_threads(tmp_path):
+    store = make_store(tmp_path)
+    store.init_new("seed", ["阿珍", "阿強"])
+
+    store.add_unresolved_thread("阿珍要不要公開那封信？")
+    store.add_unresolved_thread("阿強會否阻止她？")
+
+    assert store.data["dramatic_pressure"] == 3
+    assert store.data["unresolved_threads"] == ["阿珍要不要公開那封信？", "阿強會否阻止她？"]
+
+    store.resolve_unresolved_thread()
+
+    assert store.data["dramatic_pressure"] == 2
+    assert store.data["unresolved_threads"] == ["阿強會否阻止她？"]
+
+
 def test_stores_do_not_share_state(tmp_path):
     """regression：_DEFAULTS 淺拷貝會令兩個 store 共享巢狀 list（timeline/errors 互相污染）。"""
     s1 = GMStateStore(str(tmp_path / "a.json"))

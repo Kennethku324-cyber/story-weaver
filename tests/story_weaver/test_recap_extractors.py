@@ -76,6 +76,24 @@ def test_event_step_range_filter(tmp_path):
     assert result.sim_time_end == "20240213-09:50"
 
 
+def test_event_range_uses_checkpoint_order_when_simulator_restarts_step_count(tmp_path):
+    sim_dir = make_sim(tmp_path)
+    for step, minute in enumerate(["09:30", "09:40", "09:50"], start=1):
+        make_checkpoint(sim_dir, step, f"20240213-{minute}", {
+            AGENT: ("正在", "日常", f"第 1 回合事件 {step}", ["小鎮", "屋企"]),
+        })
+    for step, minute in enumerate(["10:00", "10:10", "10:20"], start=1):
+        make_checkpoint(sim_dir, step, f"20240213-{minute}", {
+            AGENT: ("得知", "命運提示", f"直播事件 {step}", ["小鎮", "直播室"]),
+        })
+
+    result = EventExtractor().extract(sim_dir, (4, 6))
+
+    assert [event.describe for event in result.events] == [
+        "直播事件 1", "直播事件 2", "直播事件 3",
+    ]
+
+
 def test_trivial_events_filtered(tmp_path):
     sim_dir = make_sim(tmp_path)
     make_checkpoint(sim_dir, 1, "20240213-09:30", {

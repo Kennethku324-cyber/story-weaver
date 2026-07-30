@@ -32,13 +32,20 @@ class StepNarrator:
         with open(path, "r", encoding="utf-8") as f:
             self._template = Template(f.read())
 
-    def narrate(self, sim_time: str, events: list[str], dialogues: list[str]) -> str | None:
+    def narrate(
+        self,
+        sim_time: str,
+        events: list[str],
+        dialogues: list[str],
+        story_context: str = "",
+    ) -> str | None:
         """events: ["阿珍喺大街散步", ...]；dialogues: ["阿珍：「……」", ...]。
         失敗 → None（上層靜默 skip）。"""
         if self._llm is None:
             return None
         try:
             prompt = self._template.substitute(
+                story_context=story_context or "（尚未有前情）",
                 sim_time=sim_time or "（時間不詳）",
                 events="\n".join(f"- {e}" for e in events) or "（無新事件）",
                 dialogues="\n".join(dialogues) or "（無新對話）",

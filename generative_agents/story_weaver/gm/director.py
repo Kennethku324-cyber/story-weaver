@@ -49,6 +49,17 @@ QUIET_SUMMARY = "平靜的一日，小鎮沒有特別的事情發生。"
 FAILSAFE_SUMMARY = "命運之線暫時模糊……本回合的敘事未能織成，但小鎮的生活仍在繼續。"
 
 
+def _safe_option_event_description(title: str, predicted: str) -> str:
+    """將選項轉成可放進 agent event memory 嘅文字。"""
+    describe = f"{title}。{predicted}"
+    return (
+        describe.replace("對話", "交談")
+        .replace("睡覺", "休息")
+        .replace("空閒", "留有時間")
+        .replace("待開始", "即將展開")
+    )
+
+
 def _dialogue_blocks(conversations: dict) -> list[DialogueBlock]:
     """conversation 增量 → DialogueBlock 列表，對白逐字保留原文。"""
     blocks: list[DialogueBlock] = []
@@ -101,11 +112,17 @@ def _key_events(events_delta: list[dict], limit: int = 5) -> list[str]:
 def _build_recent_history(timeline: list, max_entries: int = 3) -> str:
     """[story-weaver:continuity] 由 story_timeline 砌返最近 N 個回合嘅背景，
     包括摘要同玩家選擇，等 GM 可以保持故事連貫。"""
+    story_seed = next(
+        (e for e in timeline if getattr(e, "round", 0) == 0 and getattr(e, "summary", "")),
+        None,
+    )
     entries = [e for e in timeline if getattr(e, "round", 0) > 0]
     recent = entries[-max_entries:] if len(entries) > max_entries else entries
-    if not recent:
+    if not recent and not story_seed:
         return "（故事剛剛開始，未有過往回合）"
     lines = []
+    if story_seed:
+        lines.append(f"【故事開端】{story_seed.summary}")
     for e in recent:
         lines.append(f"第{e.round}回合摘要：{e.summary}")
         if e.player_choice:
@@ -254,6 +271,9 @@ class GMDirector:
                     matrix_text=store.full_matrix_text(),
                     round_no=round_no,
                     max_rounds=self._gm_config.get("max_rounds", 4),
+                    dramatic_pressure=self.state.data.get("dramatic_pressure", 1),
+                    unresolved_threads=self.state.data.get("unresolved_threads", []),
+                    allow_negative_elements=bool(self._gm_config.get("allow_negative_elements", False)),
                 )
             except Exception as e:
                 logger.warning("gm: 回合分析 LLM 異常", exc_info=True)
@@ -287,6 +307,8 @@ class GMDirector:
         )
         try:
             self.state.append_timeline(entry)
+            if branch_point:
+                self.state.add_unresolved_thread(branch_point)
         except Exception as e:
             logger.warning("gm: timeline 寫入失敗", exc_info=True)
             self._log_error(round_no, "timeline_append", e)
@@ -417,6 +439,7 @@ class GMDirector:
         }
         # [story-weaver:no-quiet] 標記玩家已做選擇，下回合唔會俾靜默判定吞咗
         if choice.type not in ("skip",):
+            self.state.resolve_unresolved_thread()
             self.state.data["choice_applied"] = True
             self.state.save()
         return InjectionReport(
@@ -437,7 +460,7 @@ class GMDirector:
         if option is None:
             self._log_error(round_no, "inject_option", f"搵唔到選項 {option_id}")
             return None
-        describe = f"{option.title}。{option.predicted}"
+        describe = _safe_option_event_description(option.title, option.predicted)
         node_ids: dict[str, str] = {}
         error = None
         try:
@@ -560,25 +583,10 @@ class GMDirector:
         # 移所有 agent 到共同地點
         for agent in agents.values():
             try:
-                agent.coord = meeting_coord[:]
-                agent.path = []
+                agent.move(meeting_coord[:])
             except Exception:
                 pass
-        # 記錄見面對話
-        choice_text = getattr(choice, "text", "") or choice.option_id or "命運嘅安排"
-        sim_time = server.config.get("time", "")
-        if not sim_time:
-            from modules import utils
-            sim_time = utils.get_timer().get_date("%Y%m%d-%H:%M")
-        agent_list = list(agents.keys())
-        speakers = " -> ".join(agent_list)
-        meeting_location = "小鎮，咖啡館"
-        convo_lines = [[name, f"（應約前來——命運嘅齒輪開始轉動）"] for name in agent_list]
-        convo_block = {f"{speakers} @ {meeting_location}": convo_lines}
-        if sim_time not in server.game.conversation:
-            server.game.conversation[sim_time] = []
-        server.game.conversation[sim_time].append(convo_block)
-        logger.info("gm: 強制見面 — %d agents @ %s", len(agent_list), meeting_location)
+        logger.info("gm: 強制見面 — %d agents", len(agents))
 
     def parse_custom_command(self, text: str) -> CustomCommandParse:
         """自訂命令解析 + 後置校驗。feasible=False 唔消耗回合（邊界 6）。"""

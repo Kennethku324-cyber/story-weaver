@@ -64,6 +64,9 @@ def load_settings() -> dict:
             "chat_iter": int(((config.get("agent") or {}).get("chat_iter")) or 4),
             "max_rounds": int(gm_config.get("max_rounds", 10)),
         },
+        "story": {
+            "allow_negative_elements": bool(gm_config.get("allow_negative_elements", False)),
+        },
     }
 
 
@@ -109,6 +112,12 @@ def save_settings(payload: dict) -> list[str]:
             errors.append("總回合數必須係 2-50 嘅整數")
     if errors:
         return errors
+
+    story = payload.get("story")
+    if story is not None:
+        gm_story = _read_json(GM_CONFIG_PATH)
+        gm_story["allow_negative_elements"] = bool(story.get("allow_negative_elements", False))
+        _write_json_atomic(GM_CONFIG_PATH, gm_story)
 
     if pace is not None:
         gm_pace = _read_json(GM_CONFIG_PATH)

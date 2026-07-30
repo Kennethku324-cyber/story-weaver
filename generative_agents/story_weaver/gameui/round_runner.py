@@ -19,6 +19,7 @@ import threading
 from pydantic import BaseModel
 
 from story_weaver.gm import GMDirector, load_gm_config
+from story_weaver.gm.director import _build_recent_history
 from story_weaver.gm.models import PlayerChoice
 from story_weaver.recap import RecapService
 
@@ -384,7 +385,20 @@ class RoundRunner:
         def _run():
             self._narrating = True
             try:
-                text = self._get_narrator().narrate(sim_time, events[-12:], dialogues[-12:])
+                gm = self._get_gm()
+                timeline = gm.state.build_story_timeline()
+                story_context = "\n".join(
+                    f"第{entry.round}回合：{entry.summary}"
+                    + (f"（未解分支：{entry.branch_point}）" if entry.branch_point else "")
+                    for entry in timeline[-3:]
+                )
+                story_context = _build_recent_history(timeline)
+                text = self._get_narrator().narrate(
+                    sim_time,
+                    events[-12:],
+                    dialogues[-12:],
+                    story_context=story_context,
+                )
                 if text:
                     self.frames.add_narrative_feed(text, sim_time)
             finally:

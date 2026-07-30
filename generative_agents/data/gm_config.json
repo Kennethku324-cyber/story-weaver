@@ -3,12 +3,13 @@
     "provider": "openai",
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com",
-    "api_key": ""
+    "api_key": "sk-df53abfc51d44fc4ab64d473c079181c"
   },
   "option_poignancy": 8,
   "custom_poignancy": 10,
   "poignancy_boost": 20,
   "max_rounds": 4,
   "min_rounds_to_finish": 2,
-  "steps_per_round": 3
+  "steps_per_round": 3,
+  "allow_negative_elements": true
 }

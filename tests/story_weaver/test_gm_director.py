@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from story_weaver.gm.director import GMDirector
+from story_weaver.gm.director import GMDirector, _build_recent_history
 from story_weaver.gm.models import (
     AffinitySuggestion,
     CustomCommandParse,
@@ -17,15 +17,30 @@ from story_weaver.gm.models import (
     GMRoundAnalysis,
     GMOption,
     PlayerChoice,
+    TimelineEntry,
 )
 
-GEN_DIR = "/Users/kenneth/Projects/story-weaver/generative_agents"
+GEN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "generative_agents"))
 PROMPTS_DIR = os.path.join(GEN_DIR, "data", "prompts_gm")
 
 NAMES = ["阿珍", "阿強", "小美", "阿明"]
 
 
 # ---------------------------------------------------------------- fakes
+
+
+def test_recent_history_keeps_story_opening_alongside_latest_rounds():
+    history = _build_recent_history([
+        TimelineEntry(round=0, summary="A lost spaceship lands in a singing forest."),
+        TimelineEntry(round=1, summary="The children discover the ship needs a star map."),
+        TimelineEntry(round=2, summary="The guardian offers an exchange."),
+        TimelineEntry(round=3, summary="They choose to find a moonlit compass."),
+        TimelineEntry(round=4, summary="The compass points to the forbidden shore."),
+    ], max_entries=3)
+
+    assert "lost spaceship" in history
+    assert "guardian offers an exchange" in history
+    assert "forbidden shore" in history
 
 
 class FakeConcept:
@@ -68,6 +83,14 @@ class FakeAgent:
             ),
         )
         self.injected = []
+        self.coord = [1, 1]
+        self.path = []
+        self.move_calls = []
+
+    def move(self, coord, path=None):
+        self.move_calls.append((list(coord), path))
+        self.coord = list(coord)
+        self.path = path or []
 
     def _add_concept(self, e_type, event, create=None, expire=None, filling=None,
                      poignancy_override=None):
@@ -264,6 +287,50 @@ def test_apply_option_injects_all_agents(tmp_path):
     last = gm.state.build_story_timeline()[-1]
     assert last.player_choice.type == "option"
     assert last.player_choice.option_id == "A"
+
+
+def test_option_with_dialogue_word_still_reaches_agents(tmp_path):
+    analysis = make_analysis()
+    analysis.options = [
+        GMOption(id="A", title="當面對話", predicted="兩人坦白心意，關係出現轉變"),
+    ]
+    gm = make_director(tmp_path, FakeLLM({"gm_round_summary": analysis}))
+    server = FakeServer()
+    gm.on_round_start(server)
+    add_conversation(server)
+    gm.on_round_end(server, 1)
+
+    report = gm.apply_player_choice(server, 1, PlayerChoice(type="option", option_id="A"))
+
+    assert report.injected[0].error is None
+    assert all(agent.injected for agent in server.game.agents.values())
+
+
+def test_option_meeting_uses_agent_move_to_keep_map_state_in_sync(tmp_path):
+    """A chosen branch must move agents through the normal map-update path."""
+    llm = FakeLLM({"gm_round_summary": make_analysis()})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    add_conversation(server)
+    gm.on_round_end(server, 1)
+
+    gm.apply_player_choice(server, 1, PlayerChoice(type="option", option_id="A"))
+
+    assert all(agent.move_calls for agent in server.game.agents.values())
+
+
+def test_option_meeting_does_not_write_scripted_duplicate_dialogue(tmp_path):
+    llm = FakeLLM({"gm_round_summary": make_analysis()})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    add_conversation(server)
+    gm.on_round_end(server, 1)
+
+    gm.apply_player_choice(server, 1, PlayerChoice(type="option", option_id="A"))
+
+    assert "20260729-10:00" not in server.game.conversation
 
 
 def test_apply_skip_zero_injection(tmp_path):

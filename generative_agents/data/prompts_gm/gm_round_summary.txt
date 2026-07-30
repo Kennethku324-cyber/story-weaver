@@ -19,6 +19,15 @@ ${story_seed}
 【最近回合回顧】（確保故事連貫——你必須承接上回嘅發展，唔好當每個回合係獨立故事）
 ${recent_history}
 
+【劇情壓力】${dramatic_pressure}/5
+【未解衝突】
+${unresolved_threads}
+
+【負面元素設定】
+${negative_elements_policy}
+
+壓力 1-2：埋下具體伏筆；壓力 3：角色必須正面碰撞或做選擇；壓力 4-5：必須揭露秘密、造成代價或令關係不可逆地改變。不得只描述日常。
+
 【過往分支點】
 ${branch_history}
 

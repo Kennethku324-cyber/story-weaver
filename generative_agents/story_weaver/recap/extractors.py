@@ -120,7 +120,7 @@ class EventExtractor:
         last_state: dict[str, tuple[str, str]] = {}  # agent -> (location, describe)
         corrupt = 0
 
-        for file_name in files:
+        for checkpoint_step, file_name in enumerate(files, start=1):
             path = os.path.join(sim_dir, file_name)
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -132,8 +132,9 @@ class EventExtractor:
                 result.warnings.append(f"checkpoint 損毀已剔除：{file_name}")
                 continue
 
-            step = data.get("step", 0)
-            if step < start_step or step > end_step:
+            # server.simulate() 會喺每一回合將內部 step 由 1 重新開始；
+            # 用按時間排序後嘅 checkpoint 次序，先同 RoundRunner 嘅全域 cursor 一致。
+            if checkpoint_step < start_step or checkpoint_step > end_step:
                 continue
             sim_time = str(data.get("time", ""))
             if not result.sim_time_start:
@@ -177,7 +178,7 @@ class EventExtractor:
                         location=location,
                         describe=describe,
                         poignancy=poignancy,
-                        step=step,
+                        step=checkpoint_step,
                     )
                 )
 

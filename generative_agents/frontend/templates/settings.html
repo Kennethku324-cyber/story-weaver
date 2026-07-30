@@ -65,6 +65,14 @@
 
   <button class="btn btn-primary" id="btn-save" style="padding:.6em 2em">儲存全部設定</button>
   <a href="/" style="margin-left:1em">返主頁</a>
+  <div class="llm-card">
+    <h4>故事內容</h4>
+    <p class="desc">預設只會使用安全、建設性的衝突。開啟後，故事可按需要出現危險、恐懼、失敗或關係破裂等負面元素。</p>
+    <label style="display:flex;gap:.6em;align-items:center;cursor:pointer">
+      <input type="checkbox" id="story-allow-negative-elements">
+      加入負面元素
+    </label>
+  </div>
   <div id="save-result"></div>
 </div>
 
@@ -140,6 +148,8 @@
       steps_per_round: parseInt(document.getElementById("pace-steps").value, 10),
       chat_iter: parseInt(document.getElementById("pace-chat-iter").value, 10),
       max_rounds: parseInt(document.getElementById("pace-max-rounds").value, 10),
+    }, story: {
+      allow_negative_elements: document.getElementById("story-allow-negative-elements").checked,
     } };
     SECTIONS.forEach(function (s) { payload[s] = gather(s); });
     var box = document.getElementById("save-result");
@@ -162,6 +172,9 @@
       document.getElementById("pace-steps").value = body.pace.steps_per_round;
       document.getElementById("pace-chat-iter").value = body.pace.chat_iter;
       document.getElementById("pace-max-rounds").value = body.pace.max_rounds;
+    }
+    if (body.story) {
+      document.getElementById("story-allow-negative-elements").checked = !!body.story.allow_negative_elements;
     }
   });
 })();

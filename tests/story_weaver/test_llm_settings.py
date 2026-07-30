@@ -36,6 +36,15 @@ def test_load_masks_api_key(cfg_files):
     assert s["gm_llm"]["provider"] == "openai"
 
 
+def test_negative_elements_setting_roundtrip(cfg_files):
+    assert load_settings()["story"]["allow_negative_elements"] is False
+
+    errors = save_settings({"story": {"allow_negative_elements": True}})
+
+    assert errors == []
+    assert load_settings()["story"]["allow_negative_elements"] is True
+
+
 def test_save_preserves_key_when_empty(cfg_files):
     errors = save_settings({
         "agent_llm": {"provider": "openai", "model": "kimi-k2", "base_url": "https://api.example.com/v1", "api_key": ""},

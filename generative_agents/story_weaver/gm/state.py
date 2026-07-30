@@ -32,6 +32,8 @@ _DEFAULTS: dict = {
     "finale": None,
     "errors": [],
     "choice_applied": False,  # [story-weaver:no-quiet] 今回合係咪啱啱應用咗玩家選擇
+    "dramatic_pressure": 1,
+    "unresolved_threads": [],
 }
 
 
@@ -146,6 +148,27 @@ class GMStateStore:
 
     def clear_pending_decision(self) -> None:
         self._data["pending_decision"] = None
+        self.save()
+
+    # ---------------------------------------------------------------- story pressure
+
+    def add_unresolved_thread(self, thread: str) -> None:
+        """Persist the newest dramatic question and raise pressure, capped at five."""
+        text = (thread or "").strip()
+        if not text:
+            return
+        threads = self._data.setdefault("unresolved_threads", [])
+        threads.append(text)
+        self._data["unresolved_threads"] = threads[-3:]
+        self._data["dramatic_pressure"] = min(5, int(self._data.get("dramatic_pressure", 1)) + 1)
+        self.save()
+
+    def resolve_unresolved_thread(self) -> None:
+        """A player intervention pays off one outstanding question and releases pressure."""
+        threads = self._data.setdefault("unresolved_threads", [])
+        if threads:
+            threads.pop(0)
+        self._data["dramatic_pressure"] = max(1, int(self._data.get("dramatic_pressure", 1)) - 1)
         self.save()
 
     # ---------------------------------------------------------------- injection log

@@ -2,6 +2,9 @@
 
 【時間】${sim_time}
 
+【主線脈絡】
+${story_context}
+
 【啱啱發生嘅事】
 ${events}
 
