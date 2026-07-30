@@ -452,4 +452,13 @@ app = create_app()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    _timing_handler = logging.FileHandler(
+        os.path.join(GEN_ROOT, "results", "timing.log"), encoding="utf-8"
+    )
+    _timing_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
+    for _name in ("llm_timing", "sim_timing"):
+        _tl = logging.getLogger(_name)
+        _tl.setLevel(logging.INFO)
+        _tl.addHandler(_timing_handler)
+        _tl.propagate = False
     app.run(host="127.0.0.1", port=5001, threaded=True)

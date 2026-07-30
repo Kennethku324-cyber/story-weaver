@@ -1,8 +1,13 @@
 import os
 import copy
 import json
+import time
+import logging
 import argparse
 import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+sim_timing_logger = logging.getLogger("sim_timing")
 
 from dotenv import load_dotenv, find_dotenv
 
@@ -96,20 +101,40 @@ class SimulateServer:
     def simulate(self, step, stride=0):
         timer = utils.get_timer()
         for i in range(self.start_step, self.start_step + step):
+            step_start = time.perf_counter()
             title = "Simulate Step[{}/{}, time: {}]".format(i+1, self.start_step + step, timer.get_date())
             self.logger.info("\n" + utils.split_line(title, "="))
-            for name, status in self.agent_status.items():
+
+            # [story-weaver:parallel] 並行 think + 串行 apply：
+            # think 階段係 LLM I/O bound，用 thread 並行（對話由 _CHAT_LOCK 互斥）；
+            # apply 階段（config / status / checkpoint）維持串行，順序同原本一致。
+            # 語義差異：agent 唔再即時見到同一步較早 agent 嘅新事件，要下一步先見到。
+            def _think(name, status):
+                think_start = time.perf_counter()
                 plan = self.game.agent_think(name, status)["plan"]
-                agent = self.game.get_agent(name)
-                if name not in self.config["agents"]:
-                    self.config["agents"][name] = {}
-                self.config["agents"][name].update(agent.to_dict())
-                if plan.get("path"):
-                    status["coord"], status["path"] = plan["path"][-1], []
-                self.config["agents"][name].update(
-                    # {"coord": status["coord"], "path": plan["path"]}
-                    {"coord": status["coord"]}
+                sim_timing_logger.info(
+                    "agent_think step=%d agent=%s duration=%.2fs",
+                    i + 1, name, time.perf_counter() - think_start,
                 )
+                return plan
+
+            with ThreadPoolExecutor(max_workers=max(1, len(self.agent_status))) as pool:
+                futures = {
+                    name: pool.submit(_think, name, status)
+                    for name, status in self.agent_status.items()
+                }
+                for name, status in self.agent_status.items():
+                    plan = futures[name].result()
+                    agent = self.game.get_agent(name)
+                    if name not in self.config["agents"]:
+                        self.config["agents"][name] = {}
+                    self.config["agents"][name].update(agent.to_dict())
+                    if plan.get("path"):
+                        status["coord"], status["path"] = plan["path"][-1], []
+                    self.config["agents"][name].update(
+                        # {"coord": status["coord"], "path": plan["path"]}
+                        {"coord": status["coord"]}
+                    )
 
             sim_time = timer.get_date("%Y%m%d-%H:%M")
             self.config.update(
@@ -132,6 +157,10 @@ class SimulateServer:
 
             if stride > 0:
                 timer.forward(stride)
+            sim_timing_logger.info(
+                "step_done step=%d duration=%.2fs",
+                i + 1, time.perf_counter() - step_start,
+            )
 
     def load_static(self, path):
         return utils.load_dict(os.path.join(self.static_root, path))

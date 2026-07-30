@@ -2,6 +2,7 @@
 
 import os
 import time
+import threading
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.indices.vector_store.retrievers import VectorIndexRetriever
 from llama_index.core.schema import TextNode
@@ -13,12 +14,33 @@ from llama_index.core import Settings
 
 from modules import utils
 
+# 並行 agent think：每個 agent 有自己嘅 SentenceTransformer 實例，但 torch CPU
+# 多實例並行 encode 會 segfault（exit 139）。全局鎖將 embedding 串行化——
+# 每次 encode 只係 ~60ms，唔影響並行 think 嘅收益（LLM call 先係大宗）。
+_EMBED_LOCK = threading.Lock()
+
+
+class LockedHuggingFaceEmbedding(HuggingFaceEmbedding):
+    """HuggingFaceEmbedding 加全局鎖，防止多 thread 並行 encode segfault。"""
+
+    def _get_query_embedding(self, query):
+        with _EMBED_LOCK:
+            return super()._get_query_embedding(query)
+
+    def _get_text_embedding(self, text):
+        with _EMBED_LOCK:
+            return super()._get_text_embedding(text)
+
+    def _get_text_embeddings(self, texts):
+        with _EMBED_LOCK:
+            return super()._get_text_embeddings(texts)
+
 
 class LlamaIndex:
     def __init__(self, embedding_config, path=None):
         self._config = {"max_nodes": 0}
         if embedding_config["provider"] == "hugging_face":
-            embed_model = HuggingFaceEmbedding(model_name=embedding_config["model"])
+            embed_model = LockedHuggingFaceEmbedding(model_name=embedding_config["model"])
         elif embedding_config["provider"] == "ollama":
             embed_model = OllamaEmbedding(
                 model_name=embedding_config["model"],

@@ -4,6 +4,7 @@ import os
 import math
 import random
 import datetime
+import threading
 
 from modules import memory, prompt, utils
 from modules.model.llm_model import create_llm_model
@@ -18,6 +19,9 @@ from .prompt.keywords import (
     KW_SLEEP,
     KW_SLEEPING,
 )
+
+# 並行 agent think 用：保證同一時間得一場對話（見 Agent._chat_with）
+_CHAT_LOCK = threading.Lock()
 
 
 class Agent:
@@ -105,6 +109,7 @@ class Agent:
         ), "Can not find func prompt_{} from scratch".format(func_hint)
         func = getattr(self.scratch, "prompt_" + func_hint)
         res = func(*args, **kwargs)._asdict()
+        res.setdefault("caller", func_hint)
         title, msg = "{}.{}".format(self.name, func_hint), {}
         if self.llm_available():
             self.logger.info("{} -> {}".format(self.name, func_hint))
@@ -509,6 +514,12 @@ class Agent:
         return False
 
     def _chat_with(self, other, focus):
+        # 並行 think：對話會同時讀寫兩個 agent 嘅狀態（completion、記憶、事件），
+        # 全局鎖保證同一時間得一場對話；原本嘅 KW_CHAT 檢查喺鎖入面先係原子嘅。
+        with _CHAT_LOCK:
+            return self._chat_with_locked(other, focus)
+
+    def _chat_with_locked(self, other, focus):
         if len(self.schedule.daily_schedule) < 1 or len(other.schedule.daily_schedule) < 1:
             # initializing
             return False

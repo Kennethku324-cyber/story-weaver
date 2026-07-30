@@ -47,7 +47,9 @@ class Tile:
         return False
 
     def get_events(self):
-        return self.events.values()
+        # 並行 think 下其他 thread 可能同時 add/remove，返 copy 避免
+        # "dictionary changed size during iteration"
+        return list(self.events.values())
 
     def add_event(self, event):
         if isinstance(event, (tuple, list)):

@@ -2,10 +2,13 @@
 
 import time
 import re
+import logging
 import requests
 from magentic import prompt
 
 from .text_normalize import normalize_llm_output
+
+timing_logger = logging.getLogger("llm_timing")
 
 
 class LLMModel:
@@ -35,7 +38,10 @@ class LLMModel:
     ):
         response = None
         self._summary.setdefault(caller, [0, 0, 0])
+        call_start = time.perf_counter()
+        attempts = 0
         for _ in range(retry):
+            attempts += 1
             try:
                 output = self._completion(prompt, return_type, **kwargs)
                 output = normalize_llm_output(output, return_type)
@@ -55,6 +61,11 @@ class LLMModel:
         pos = 2 if response is None else 1
         self._summary["total"][pos] += 1
         self._summary[caller][pos] += 1
+        timing_logger.info(
+            "llm_call caller=%s model=%s attempts=%d ok=%s duration=%.2fs",
+            caller, self._model, attempts, response is not None,
+            time.perf_counter() - call_start,
+        )
         return response or failsafe
 
     def _completion(self, prompt, return_type, **kwargs):
@@ -79,7 +90,14 @@ class OpenAILLMModel(LLMModel):
     def setup(self, config):
         from magentic import OpenaiChatModel
 
-        return OpenaiChatModel(self._model, api_key=self._api_key, base_url=self._base_url)
+        handle = OpenaiChatModel(self._model, api_key=self._api_key, base_url=self._base_url)
+        # openai client 預設 timeout=600s：DeepSeek hang 起上嚟單一 call 可以鎖死成個
+        # thread 10 分鐘（並行 think 下成步等齊先完）。改短 timeout 交返畀我哋自己嘅
+        # retry loop 處理；max_retries=0 避免同外層 retry 相乘。
+        timeout = config.get("timeout", 120)
+        handle._client = handle._client.with_options(timeout=timeout, max_retries=0)
+        handle._async_client = handle._async_client.with_options(timeout=timeout, max_retries=0)
+        return handle
 
     def _completion(self, _prompt, return_type, temperature=0.5):
         @prompt(

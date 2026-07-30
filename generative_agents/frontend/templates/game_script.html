@@ -30,7 +30,7 @@
 	let pre_anims_direction;
 	let pre_anims_direction_dict = {};
 	let movement_target = {};
-	let last_applied = {};   // agent -> [x,y] 上一帧套用咗嘅位置（適應式節奏用）
+	let last_applied = {};   // agent -> [x,y] 上一幀套用咗嘅位置（適應式節奏用）
 	let finished = false;
 	let paused = false;
 
@@ -289,8 +289,8 @@
 			execute_count = execute_count_max + 1;
 			step = step + 1;
 
-			// 適應式節奏：下一帧有角色郁就慢（行路睇得舒服），
-			// 全員企定就快放跳過（唔使干等 64 秒先見到郁）
+			// 適應式節奏：下一幀有角色鬱就慢（行路睇得舒服），
+			// 全員企定就快放跳過（唔使乾等 64 秒先見到鬱）
 			let motion = false;
 			if (step in all_movement) {
 				for (let agent_key in all_movement[step]) {
