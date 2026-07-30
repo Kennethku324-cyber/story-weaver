@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 
 from modules.prompt.keywords import KW_SLEEPING
@@ -54,7 +55,9 @@ class FrameBuffer:
         self._feed_seq = 0
         self._last_location: dict[str, dict] = {}  # agent -> {"movement": [x,y], "location": str}
         self._conversation_seen: set[str] = set()
+        self._files_processed: set[str] = set()  # [story-weaver:dedup] 用檔名去重（唔用 step number，因為 checkpoint step 會跨回合重置）
         self._last_step = 0
+        self._cumulative_step = 0  # [story-weaver:dedup] 累積 step counter，避免 frame key 碰撞
 
     # ---------------------------------------------------------------- 查詢
 
@@ -94,6 +97,9 @@ class FrameBuffer:
         skipped: list[str] = []
 
         for file_name in files:
+            # [story-weaver:dedup] 用檔名去重（唔用 step number——checkpoint step 會跨回合重置）
+            if file_name in self._files_processed:
+                continue
             path = os.path.join(self._folder, file_name)
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -102,9 +108,9 @@ class FrameBuffer:
             except Exception:
                 skipped.append(file_name)  # 半截檔（推演中被殺）→ 跳過
                 continue
-            if step in processed or step <= self._last_step:
-                continue
+            self._cumulative_step += 1
             self._process_checkpoint(data, conversation, new_frames, new_feed)
+            self._files_processed.add(file_name)
             self._last_step = max(self._last_step, step)
 
         self._frames.update(new_frames)
@@ -115,6 +121,64 @@ class FrameBuffer:
             "last_step": self._last_step,
             "skipped": skipped,
         }
+
+    def seed_idle_frames(self, agent_positions: dict[str, list], num_frames: int = 120) -> None:
+        """[story-weaver:idle] 未有 checkpoint 之前，用 spawn 位置生成初始踱步幀，
+        等角色未推演都有嘢睇，唔會死企。"""
+        if self._frames:
+            return  # 已有幀就唔覆蓋
+        for i in range(num_frames):
+            step_key = str(i + 1)
+            frame_data: dict[str, dict] = {}
+            for agent_name, coord in agent_positions.items():
+                # 生成簡單來回踱步（模擬 _build_wandering_path 效果）
+                import math
+                offset_x = math.sin(i * 0.3 + hash(agent_name) % 100 * 0.1) * 1.5
+                offset_y = math.cos(i * 0.3 + hash(agent_name) % 100 * 0.1) * 1.5
+                movement = [
+                    float(coord[0]) + offset_x,
+                    float(coord[1]) + offset_y,
+                ]
+                frame_data[agent_name] = {
+                    "location": "",
+                    "movement": movement,
+                    "action": "等待故事開始…",
+                }
+            self._frames[step_key] = frame_data
+        # 加 frame 0
+        frame_0: dict[str, dict] = {}
+        for agent_name, coord in agent_positions.items():
+            frame_0[agent_name] = {
+                "location": "",
+                "movement": [float(coord[0]), float(coord[1])],
+                "action": "",
+            }
+        self._frames["0"] = frame_0
+        # 初始化 _last_location
+        for agent_name, coord in agent_positions.items():
+            self._last_location[agent_name] = {
+                "movement": list(coord),
+                "location": "",
+            }
+
+    def _build_wandering_path(self, coord: list, steps: int = 8) -> list:
+        """[story-weaver:wandering] 為原地活動嘅角色生成室內踱步路徑。
+        喺當前 coord 附近搵 non-collision tile 行一個來回 loop。"""
+        path = [list(coord)]
+        current = list(coord)
+        for _ in range(steps):
+            try:
+                neighbors = self._maze.get_around(current, no_collision=True)
+            except Exception:
+                neighbors = []
+            if not neighbors:
+                break
+            current = random.choice(neighbors)
+            path.append(list(current))
+        # 返原位（形成來回踱步感）
+        if len(path) > 1:
+            path.append(list(coord))
+        return path
 
     def _load_conversation(self) -> dict:
         path = os.path.join(self._folder, "conversation.json")
@@ -134,6 +198,8 @@ class FrameBuffer:
     def _process_checkpoint(self, data: dict, conversation: dict,
                             new_frames: dict, new_feed: list[FeedItem]) -> None:
         step = data["step"]
+        # [story-weaver:dedup] 用累積 step 計 frame key，避免 checkpoint step 跨回合重置導致碰撞
+        cstep = self._cumulative_step
         step_time = data.get("time", "")
         agents = data.get("agents") or {}
 
@@ -173,7 +239,7 @@ class FrameBuffer:
                 # 首次見到呢個 agent：以當前 coord 做起點（resume 情境）或第 0 帧
                 last = {"movement": list(coord) if coord else [0, 0], "location": location or ""}
                 self._last_location[agent_name] = last
-                if step == 1:
+                if cstep == 1:
                     # 第 0 帧初始位置（同 compress.py insert_frame0）
                     new_frames.setdefault("0", {})[agent_name] = {
                         "location": location or "",
@@ -200,33 +266,67 @@ class FrameBuffer:
 
             had_conversation = any(agent_name in p for p in persons_in_conversation)
 
+            # [story-weaver:movement-interp] 將 path 插值均勻分佈到全部幀，
+            # 避免角色只喺頭幾幀閃現、之後全程靜止。
+            # 原地活動（path_len <= 1）生成室內踱步路徑，令角色持續可見。
+            path_points = list(path)  # shallow copy，每個 element 係 [x, y]
+            path_len = len(path_points)
+            is_wandering = False
+            if path_len <= 1:
+                # [story-weaver:wandering] 原地活動 → 生成室內踱步
+                wandering = self._build_wandering_path(source_coord, steps=8)
+                if len(wandering) > 2:
+                    path_points = wandering
+                    path_len = len(path_points)
+                    is_wandering = True
             for i in range(FRAMES_PER_STEP):
-                moving = len(path) > 1
-                if len(path) > 0:
-                    movement = list(path[0])
-                    path = path[1:]
-                    self._last_location[agent_name]["movement"] = movement
-                    self._last_location[agent_name]["location"] = location
+                if path_len > 1:
+                    # [story-weaver:linear-interp] 線性插值：每幀位置都唔同，
+                    # 角色持續平滑移動，唔會因為重複位置俾 adaptive pacing skip 咗
+                    progress = i / max(FRAMES_PER_STEP - 1, 1)
+                    total_segments = path_len - 1
+                    float_idx = progress * total_segments
+                    seg_idx = int(float_idx)
+                    frac = float_idx - seg_idx
+                    if seg_idx >= path_len - 1:
+                        movement = [float(path_points[-1][0]), float(path_points[-1][1])]
+                        moving = False
+                    else:
+                        p0 = path_points[seg_idx]
+                        p1 = path_points[seg_idx + 1]
+                        movement = [
+                            p0[0] + frac * (p1[0] - p0[0]),
+                            p0[1] + frac * (p1[1] - p0[1]),
+                        ]
+                        moving = True
+                elif path_len == 1:
+                    movement = [float(path_points[0][0]), float(path_points[0][1])]
+                    moving = False
                 else:
-                    movement = None
+                    movement = [float(source_coord[0]), float(source_coord[1])]
+                    moving = False
 
                 action = ""
-                if moving:
+                if moving and not is_wandering:
                     action = f"前往 {location}"
-                elif movement is not None:
+                else:
                     action = describe
                     if KW_SLEEPING in action:
                         action = "😴 " + action
                     elif had_conversation:
                         action = "💬 " + action
 
-                step_key = "%d" % ((step - 1) * FRAMES_PER_STEP + 1 + i)
-                if movement is not None:
-                    new_frames.setdefault(step_key, {})[agent_name] = {
-                        "location": location,
-                        "movement": movement,
-                        "action": action,
-                    }
+                step_key = "%d" % ((cstep - 1) * FRAMES_PER_STEP + 1 + i)
+                new_frames.setdefault(step_key, {})[agent_name] = {
+                    "location": location,
+                    "movement": movement,
+                    "action": action,
+                }
+
+            # 更新最後已知位置（用 path 終點）
+            if path_len > 0:
+                self._last_location[agent_name]["movement"] = list(path_points[-1])
+                self._last_location[agent_name]["location"] = location
 
             # 事件 feed（每 checkpoint 每 agent 一條）
             if describe:

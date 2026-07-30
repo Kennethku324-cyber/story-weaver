@@ -31,6 +31,7 @@ _DEFAULTS: dict = {
     "affinity_rounds_log": [],
     "finale": None,
     "errors": [],
+    "choice_applied": False,  # [story-weaver:no-quiet] 今回合係咪啱啱應用咗玩家選擇
 }
 
 

@@ -63,20 +63,36 @@ class GMPrompter:
         agent_names: list[str],
         story_seed: str,
         branch_history: list[str],
-        events: list[dict],
-        conversations: dict,
-        matrix_text: str,
+        recent_history: str = "",
+        events: list[dict] | None = None,
+        conversations: dict | None = None,
+        agent_inner: str = "",
+        matrix_text: str = "",
+        round_no: int = 1,
+        max_rounds: int = 4,
     ) -> GMRoundAnalysis | None:
         """一次 call 出摘要+分支點+選項+好感度建議。全敗 → None（上層行 failsafe）。"""
         try:
             template = _load_template(self._dir, "gm_round_summary.txt")
+            remaining = max_rounds - round_no
+            if round_no >= max_rounds:
+                ending_pressure = "⚠️ 呢個係最後一回合——你必須將所有伏筆收束，推動故事走向一個完整嘅結局。角色必須面對故事開端所設定嘅核心衝突。"
+            elif remaining <= 2:
+                ending_pressure = f"⚠️ 仲有 {remaining} 個回合就要結局。劇情必須明顯推進——唔可以再拖、唔可以再等。角色必須開始行動、見面，直面故事開端嘅核心矛盾。"
+            else:
+                ending_pressure = f"故事正處於第 {round_no} 回合，要為後面嘅高潮做好鋪墊。引導角色相遇、為故事開端嘅衝突埋下伏筆。"
             prompt = template.substitute(
                 agent_names="、".join(agent_names),
                 story_seed=story_seed or "（無）",
                 branch_history="\n".join(f"- {b}" for b in branch_history) or "（暫無）",
-                events=_format_events(events),
-                conversations=_format_conversations(conversations),
+                recent_history=recent_history or "（故事剛剛開始）",
+                events=_format_events(events or []),
+                conversations=_format_conversations(conversations or {}),
+                agent_inner=agent_inner or "（無法讀取角色狀態）",
                 matrix_text=matrix_text or "（無數據）",
+                round_no=str(round_no),
+                max_rounds=str(max_rounds),
+                ending_pressure=ending_pressure,
             )
         except Exception:
             logger.warning("gm prompter: round_summary 模板組裝失敗", exc_info=True)

@@ -39,6 +39,7 @@
   <span><span class="label">故事</span> {{ session }}</span>
   <span><span class="label">回合</span> <span id="ui-round">0</span> / <span id="ui-max-round">10</span></span>
   <span><span class="label">狀態</span> <span id="ui-status">準備中…</span></span>
+  <span><span class="label">動畫幀</span> <span id="ui-anim-step" style="color:#f90">0</span>/<span id="ui-anim-total">0</span></span>
   <span><span class="label">遊戲內時間</span> <span id="ui-sim-time">—</span></span>
   <span style="margin-left:auto">
     <button id="btn-round">開始推演</button>
@@ -178,6 +179,8 @@ function pollState() {
   }).done(function(resp) {
     if (resp.new_frames) {
       Object.assign(all_movement, resp.new_frames);
+      console.log("[DEBUG] pollState: received " + Object.keys(resp.new_frames).length + " frames, latest=" + resp.frame_latest + ", all_movement now has " + Object.keys(all_movement).length + " keys");
+      $("#ui-anim-total").text(resp.frame_latest || "等待推演");
     }
     sinceFrame = resp.frame_latest || sinceFrame;
     $("#ui-round").text(resp.round);
@@ -205,6 +208,10 @@ function pollState() {
     $("#btn-round").text(resp.round === 0 ? "開始推演" : "下一回合");
 
     if (resp.status === "waiting_decision" && resp.pending_decision && !modalOpen) {
+      // [story-weaver:continuity] 將連貫故仔附上 decision object
+      if (resp.story_narrative) {
+        resp.pending_decision.story_narrative = resp.story_narrative;
+      }
       openDecisionModal(resp.pending_decision);
     }
     if (resp.status === "finished" && resp.finale) {
@@ -284,25 +291,34 @@ function openDecisionModal(decision) {
   $("#dm-readonly").toggle(isReadonly === true);
   $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", isReadonly === true);
 
-  // 故事回顧（對白原文）
+  // 故事回顧 — 優先用 recap service 嘅連貫敍事，fallback 逐回合 timeline
   const review = $("#story-review").empty();
-  (decision.story_timeline || []).forEach(function(entry) {
+  const narrative = decision.story_narrative || "";
+  if (narrative) {
+    // [story-weaver:continuity] 連貫故仔模式
     const block = $('<div class="tl-round">');
-    if (entry.round === 0) {
-      block.append($('<div class="tl-summary">').text("【故事開端】" + entry.summary));
-    } else {
-      block.append($('<div class="tl-summary">').text("第 " + entry.round + " 回合：" + (entry.summary || "")));
-      (entry.dialogues || []).forEach(function(d) {
-        const dl = $('<div class="tl-dialogue">').append($('<b>').text(d.speakers + " @ " + d.address));
-        (d.lines || []).forEach(l => dl.append($('<div>').text(l[0] + "：「" + l[1] + "」")));
-        block.append(dl);
-      });
-      if (entry.player_choice && entry.player_choice.text) {
-        block.append($('<div class="tl-choice">').text("✦ 你嘅決定：" + entry.player_choice.text));
-      }
-    }
+    block.append($('<div class="tl-narrative">').text(narrative));
     review.append(block);
-  });
+  } else {
+    // fallback：逐回合顯示
+    (decision.story_timeline || []).forEach(function(entry) {
+      const block = $('<div class="tl-round">');
+      if (entry.round === 0) {
+        block.append($('<div class="tl-summary">').text("【故事開端】" + entry.summary));
+      } else {
+        block.append($('<div class="tl-summary">').text("第 " + entry.round + " 回合：" + (entry.summary || "")));
+        (entry.dialogues || []).forEach(function(d) {
+          const dl = $('<div class="tl-dialogue">').append($('<b>').text(d.speakers + " @ " + d.address));
+          (d.lines || []).forEach(l => dl.append($('<div>').text(l[0] + "：「" + l[1] + "」")));
+          block.append(dl);
+        });
+        if (entry.player_choice && entry.player_choice.text) {
+          block.append($('<div class="tl-choice">').text("✦ 你嘅決定：" + entry.player_choice.text));
+        }
+      }
+      review.append(block);
+    });
+  }
 
   // 選項卡
   const opts = $("#dm-options").empty();

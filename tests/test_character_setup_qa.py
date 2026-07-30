@@ -133,26 +133,49 @@ class TestCharacterCount:
         assert any("最少" in m and "4" in m for m in messages), \
             f"PRD 要求「最少要揀 4 個角色」，實際：{messages}"
 
-    def test_over_10_characters_rejected(self, valid_payload):
-        """邊界 12：上限 10 寫死喺後端 schema。"""
+    def test_over_25_characters_rejected(self, valid_payload):
+        """邊界 12：上限 25 寫死喺後端 schema。"""
+        import copy
+        # Build up to 25 (max allowed)
         base = valid_payload["characters"][0]
-        extra = []
-        extra_homes = [
-            ["the Ville", "藝術家共居空間", arena]
-            for arena in ["亞當斯的房間", "阿比蓋爾的房間", "拉吉夫的房間",
-                          "瑞恩的房間", "卡洛斯·莫雷雷諾的房間", "海莉的房間"]
+        homes = [
+            ["the Ville", "亞瑟的公寓", "主人房"],
+            ["the Ville", "藝術家共居空間", "拉託亞的房間"],
+            ["the Ville", "藝術家共居空間", "阿比蓋爾的房間"],
+            ["the Ville", "喬治的公寓", "主人房"],
+            ["the Ville", "卡洛斯的公寓", "主人房"],
+            ["the Ville", "瑞恩的公寓", "主人房"],
+            ["the Ville", "藝術家共居空間", "弗朗西斯科的房間"],
+            ["the Ville", "奧克山學院宿舍", "瑪麗亞的房間"],
+            ["the Ville", "奧克山學院宿舍", "阿伊莎的房間"],
+            ["the Ville", "奧克山學院宿舍", "沃爾夫岡的房間"],
+            ["the Ville", "亞當的家", "主人房"],
+            ["the Ville", "山本百合子的房子", "主人房"],
+            ["the Ville", "摩爾家族的房子", "主人房"],
+            ["the Ville", "塔瑪拉和卡門的家", "塔瑪拉的房間"],
+            ["the Ville", "塔瑪拉和卡門的家", "卡門的房間"],
+            ["the Ville", "莫雷諾家族的房子", "湯姆和簡的卧室"],
+            ["the Ville", "林氏家族的房子", "梅和約翰的卧室"],
+            ["the Ville", "林氏家族的房子", "埃迪的卧室"],
         ]
-        for i, home in enumerate(extra_homes):
-            c = dict(base)
+        for i, home in enumerate(homes):
+            c = copy.deepcopy(base)
             c["display_name"] = f"角色{i + 5}"
             c["home"] = home
-            extra.append(c)
-        valid_payload["characters"] = valid_payload["characters"] + extra  # 10 個 → OK
+            valid_payload["characters"].append(c)
+        # 4 base + 18 extra = 22... still under 25. Add 3 more:
+        for j in range(3):
+            c = copy.deepcopy(base)
+            c["display_name"] = f"多角色{j + 1}"
+            c["home"] = homes[j % len(homes)]
+            valid_payload["characters"].append(c)
+        assert len(valid_payload["characters"]) == 25
         SetupCreateRequest.model_validate(valid_payload)
-        c = dict(base)
-        c["display_name"] = "角色11"
+        # 第 26 個 → 拒絕
+        c = copy.deepcopy(base)
+        c["display_name"] = "角色26"
         c["home"] = ["the Ville", "摩爾家族的房子", "主人房"]
-        valid_payload["characters"].append(c)  # 11 個 → 拒絕
+        valid_payload["characters"].append(c)  # 26 個 → 拒絕
         with pytest.raises(ValidationError):
             SetupCreateRequest.model_validate(valid_payload)
 

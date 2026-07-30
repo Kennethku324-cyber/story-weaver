@@ -97,6 +97,27 @@ class RoundRunner:
 
     # ---------------------------------------------------------------- 懶加載
 
+    def _read_agent_positions(self) -> dict[str, list]:
+        """讀取每個 agent 嘅初始坐標（由 agent config json）。"""
+        positions: dict[str, list] = {}
+        try:
+            sim_config = self._load_sim_config()
+        except Exception:
+            return positions
+        for agent_name, agent_cfg in (sim_config.get("agents") or {}).items():
+            config_path = agent_cfg.get("config_path", "")
+            if not config_path:
+                continue
+            full_path = os.path.join(self.static_root, config_path)
+            try:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    coord = json.load(f).get("coord")
+                    if coord:
+                        positions[agent_name] = coord
+            except Exception:
+                pass
+        return positions
+
     def _load_story_meta(self) -> dict:
         try:
             with open(os.path.join(self.folder, "story.json"), "r", encoding="utf-8") as f:
@@ -211,6 +232,14 @@ class RoundRunner:
             info.message = f"已恢復至第 {state.round + 1} 回合（{last_step} 步），部分進度遺失"
         # 重建 FrameBuffer（全量掃一次；memory-only）
         self.frames.scan(processed_steps=[])
+        # [story-weaver:idle] 未有 checkpoint 就生成初始踱步幀，角色唔會死企
+        if self.frames.latest_frame_key() == 0:
+            try:
+                positions = self._read_agent_positions()
+                if positions:
+                    self.frames.seed_idle_frames(positions)
+            except Exception:
+                logger.warning("round_runner: 初始 idle frames 生成失敗", exc_info=True)
         if skipped:
             logger.warning("round_runner: 跳過損毀 checkpoint：%s", skipped)
         return info

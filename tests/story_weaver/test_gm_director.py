@@ -5,6 +5,7 @@ LLM 全部用 FakeLLM stub（按 caller 回應），server 用 FakeServer，唔�
 
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -59,6 +60,13 @@ class FakeAgent:
         self.status = {"poignancy": 0}
         self.scratch = FakeScratch()
         self.associate = FakeAssociate()
+        self.schedule = SimpleNamespace(
+            daily_schedule=[],
+            current_plan=lambda: (
+                {"start": 0, "duration": 60, "describe": "工作", "decompose": []},
+                {"start": 0, "duration": 15, "describe": "在書桌前工作"},
+            ),
+        )
         self.injected = []
 
     def _add_concept(self, e_type, event, create=None, expire=None, filling=None,
@@ -71,6 +79,15 @@ class FakeAgent:
             {"e_type": e_type, "event": event, "poignancy": poignancy_override}
         )
         return concept
+
+    def is_awake(self):
+        return True
+
+    def get_tile(self):
+        return SimpleNamespace(get_address=lambda: ["village", "house"])
+
+    def revise_schedule(self, event, start, duration):
+        pass  # fake: no-op
 
 
 class FakeGame:
@@ -141,17 +158,18 @@ def add_conversation(server):
 
 
 def test_on_round_end_quiet_round(tmp_path):
+    """[story-weaver:no-quiet] 靜默回合（冇新事件）都會 call LLM 分析，
+    唔再直接出「平靜的一日」。LLM 失敗先行 failsafe。"""
     llm = FakeLLM()
     gm = make_director(tmp_path, llm)
     server = FakeServer()
     gm.on_round_start(server)
     decision = gm.on_round_end(server, 1)
     assert decision.is_quiet is True
-    assert decision.options == []
-    assert decision.branch_point is None
-    assert "平靜" in decision.summary
-    # 靜默回合唔 call LLM
-    assert not any(c["caller"] == "gm_round_summary" for c in llm.calls)
+    # LLM 冇 script → failsafe，所以 options 為空
+    assert decision.is_failsafe is True
+    # 每回合都會 call LLM（唔再 skip）
+    assert any(c["caller"] == "gm_round_summary" for c in llm.calls)
     # story_timeline：seed + 本回合
     assert len(decision.story_timeline) == 2
 
@@ -216,7 +234,8 @@ def test_on_round_start_applies_relations_prefix(tmp_path):
     server = FakeServer()
     server.config["affinity"] = {"阿珍": {"阿強": {"value": -65, "label": "舊情人"}}}
     gm.on_round_start(server)
-    assert server.game.agents["阿珍"].scratch.currently.startswith("【人際關係】")
+    # [story-weaver:theme-anchor] 主題錨定會加喺【人際關係】前面
+    assert "【人際關係】" in server.game.agents["阿珍"].scratch.currently
     assert "-65" in server.game.agents["阿珍"].scratch.currently
 
 

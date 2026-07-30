@@ -47,7 +47,7 @@ class RelationshipIn(BaseModel):
 class SetupCreateRequest(BaseModel):
     story_name: str = Field(min_length=1, max_length=50)
     story_opening: str = Field(min_length=10, max_length=1000)
-    characters: list[CharacterIn] = Field(min_length=4, max_length=10)
+    characters: list[CharacterIn] = Field(min_length=4, max_length=25)
     relationships: list[RelationshipIn] = Field(default_factory=list)
 
     @field_validator("story_name")

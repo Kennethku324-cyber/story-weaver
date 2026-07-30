@@ -220,6 +220,9 @@
 		}
 
 		if (finished || paused) return;
+		document.getElementById("ui-anim-step").textContent = step;
+		// 未有 frame 數據就唔好浪費 step（新 game 等緊第一次推演）
+		if (Object.keys(all_movement).length === 0) return;
 
 		for (let i = 0; i < Object.keys(personas).length; i++) {
 			let curr_persona_name = Object.keys(personas)[i];
@@ -234,6 +237,7 @@
 					if (execute_count == execute_count_max) {
 						let curr_x = all_movement[step][agent_key]["movement"][0];
 						let curr_y = all_movement[step][agent_key]["movement"][1];
+						if (step <= 5) console.log("[MOVE] step=" + step + " " + agent_key + " target=[" + curr_x + "," + curr_y + "] sprite_at=[" + Math.round(curr_persona.body.x) + "," + Math.round(curr_persona.body.y) + "]");
 						movement_target[curr_persona_name] = [curr_x * tile_width, curr_y * tile_width];
 						last_applied[agent_key] = [curr_x, curr_y];
 

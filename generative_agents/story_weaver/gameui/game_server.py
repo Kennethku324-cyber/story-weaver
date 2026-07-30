@@ -78,6 +78,22 @@ def reset_runners() -> None:
         _runners.clear()
 
 
+# [story-weaver:deploy] 簡單 rate limiter — 防止 abuse 燒錢
+_rate_store: dict[str, list] = {}
+
+def _rate_limit(key: str, max_req: int = 10, window: int = 60) -> bool:
+    """return True if rate limited"""
+    import time as _time
+    now = _time.time()
+    times = _rate_store.get(key, [])
+    times = [t for t in times if now - t < window]
+    if len(times) >= max_req:
+        return True
+    times.append(now)
+    _rate_store[key] = times
+    return False
+
+
 def create_app() -> Flask:
     app = Flask(
         __name__,
@@ -270,10 +286,20 @@ def create_app() -> Flask:
             runner.maybe_narrate(runner.frames.feed_since(feed_before))
 
         pending = None
+        story_narrative = ""
         if state.status == UIStatus.WAITING_DECISION:
             decision = runner._get_gm().get_pending_decision()
             if decision is not None:
                 pending = json.loads(decision.model_dump_json())
+            # [story-weaver:continuity] 提供連貫故仔敘事（recap service 生成）
+            try:
+                recap = runner._get_recap()
+                if recap is not None:
+                    cr = recap.get_cumulative_text(name)
+                    if cr:
+                        story_narrative = cr
+            except Exception:
+                pass
 
         finale = None
         if state.status == UIStatus.FINISHED:
@@ -293,6 +319,7 @@ def create_app() -> Flask:
             "feed_latest": runner.frames.feed_latest,
             "agents_meta": agents_meta,
             "pending_decision": pending,
+            "story_narrative": story_narrative,  # [story-weaver:continuity] 連貫故仔
             "affinity": affinity,
             "agents": state.agents,
             "readonly": readonly,
@@ -306,6 +333,9 @@ def create_app() -> Flask:
     def api_round_start():
         data = request.get_json(silent=True) or {}
         name = data.get("name", "")
+        # [story-weaver:deploy] rate limit：每個 story 每 60 秒最多 6 次推演
+        if _rate_limit(f"round_start:{name}", max_req=6, window=60):
+            return jsonify({"accepted": False, "reason": "推演太頻密，請等一陣再試"}), 429
         runner = get_runner(name)
         if runner is None:
             return jsonify({"error": "session 唔存在"}), 404

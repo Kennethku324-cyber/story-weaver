@@ -11,12 +11,13 @@ import json
 import logging
 import os
 
+from modules import memory, utils
 from modules.model.llm_model import create_llm_model
 from story_weaver.affinity.gm import GMAdjustmentItem, GMAdjustmentResponse, apply_gm_response
 from story_weaver.affinity.store import AffinityStore
 
 from .delta import RoundBaseline, RoundDeltaCollector
-from .injector import PREDICATE_CUSTOM, PREDICATE_OPTION, MemoryInjector
+from .injector import INJECT_OBJECT, PREDICATE_CUSTOM, PREDICATE_OPTION, MemoryInjector
 from .models import (
     AffinityChange,
     CustomCommandParse,
@@ -65,10 +66,56 @@ def _dialogue_blocks(conversations: dict) -> list[DialogueBlock]:
     return blocks
 
 
+def _format_agent_inner(server, agent_names: list[str]) -> str:
+    """[story-weaver:inner-world] 收集每個 agent 嘅內心狀態同當前動作。
+    即使冇外部事件/對話，GM 都可以由角色嘅內心世界推斷劇情。"""
+    lines = []
+    for name in agent_names:
+        agent = server.game.agents.get(name)
+        if agent is None:
+            continue
+        try:
+            currently = getattr(agent.scratch, "currently", "") or ""
+            action = ""
+            try:
+                action = agent.action.get_event().get_describe() or ""
+            except Exception:
+                pass
+            if currently or action:
+                lines.append(f"【{name}】")
+                if currently:
+                    lines.append(f"  內心：{currently}")
+                if action:
+                    lines.append(f"  正在：{action}")
+        except Exception:
+            pass
+    return "\n".join(lines) or "（無法讀取角色狀態）"
+
+
 def _key_events(events_delta: list[dict], limit: int = 5) -> list[str]:
     """按 poignancy 取頭幾條事件 describe 做 key_events。"""
     ordered = sorted(events_delta, key=lambda e: e.get("poignancy", 0), reverse=True)
     return [e.get("describe", "") for e in ordered[:limit] if e.get("describe")]
+
+
+def _build_recent_history(timeline: list, max_entries: int = 3) -> str:
+    """[story-weaver:continuity] 由 story_timeline 砌返最近 N 個回合嘅背景，
+    包括摘要同玩家選擇，等 GM 可以保持故事連貫。"""
+    entries = [e for e in timeline if getattr(e, "round", 0) > 0]
+    recent = entries[-max_entries:] if len(entries) > max_entries else entries
+    if not recent:
+        return "（故事剛剛開始，未有過往回合）"
+    lines = []
+    for e in recent:
+        lines.append(f"第{e.round}回合摘要：{e.summary}")
+        if e.player_choice:
+            choice_type = e.player_choice.type
+            choice_text = e.player_choice.text or ""
+            if not choice_text and e.player_choice.option_id:
+                choice_text = f"揀咗選項 {e.player_choice.option_id}"
+            if choice_text:
+                lines.append(f"  → 玩家決定（{choice_type}）：{choice_text}")
+    return "\n".join(lines)
 
 
 class GMDirector:
@@ -129,7 +176,7 @@ class GMDirector:
     # ---------------------------------------------------------------- 回合生命週期
 
     def on_round_start(self, server) -> None:
-        """拍增量基線快照 + 注入好感度 currently 前綴。"""
+        """拍增量基線快照 + 注入好感度 currently 前綴 + 主題錨定。"""
         try:
             baseline = self._collector.snapshot(server)
             self.state.set_round_baseline(baseline)
@@ -146,6 +193,24 @@ class GMDirector:
         except Exception as e:
             logger.warning("gm: 好感度前綴注入失敗", exc_info=True)
             self._log_error(0, "round_start_prefix", e)
+        # [story-weaver:theme-anchor] 每回合開始將故事主題重新錨定入 agent 當前意識，
+        # 確保推演內容跟隨故事開端，唔會漂移成日常流水賬
+        try:
+            story_seed = (self.state.data.get("story_seed") or "").strip()
+            if story_seed:
+                for name, agent in server.game.agents.items():
+                    try:
+                        current = agent.scratch.currently
+                        # 避免重複疊加（已含主題就唔再加）
+                        if story_seed[:20] not in current:
+                            agent.scratch.currently = (
+                                f"【故事主題】{story_seed}。{current}"
+                            )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("gm: 主題錨定失敗", exc_info=True)
+            self._log_error(0, "theme_anchor", e)
 
     def on_round_end(self, server, round_no: int) -> GMDecision:
         """採增量 → 靜默判斷 → LLM 分析 → 持久化 pending → 回傳 GMDecision。"""
@@ -165,32 +230,46 @@ class GMDirector:
 
             delta = RoundDelta(is_quiet=True)
 
-        # 2. LLM 分析（靜默回合唔使 call）
+        # 2. LLM 分析 — 每回合都必須做，唔再跳過「靜默回合」
+        # （玩家期望每回合都有劇情推進，GM 必須認真睇每個回合）
         analysis = None
         is_failsafe = False
-        if delta.is_quiet:
-            summary = QUIET_SUMMARY
+        had_choice = self.state.data.get("choice_applied", False)
+        if self._prompter is not None:
+            try:
+                # [story-weaver:continuity] 砌返最近回合嘅背景，確保故事連貫
+                recent_history = _build_recent_history(
+                    self.state.build_story_timeline(), max_entries=3
+                )
+                # [story-weaver:inner-world] 收集 agent 內心狀態（currently + 當前動作）
+                agent_inner = _format_agent_inner(server, self.agent_names)
+                analysis = self._prompter.round_analysis(
+                    agent_names=self.agent_names,
+                    story_seed=self.state.data.get("story_seed", ""),
+                    branch_history=self.state.data.get("branch_point_history", []),
+                    recent_history=recent_history,
+                    events=delta.events_delta,
+                    conversations=delta.conversations_delta,
+                    agent_inner=agent_inner,
+                    matrix_text=store.full_matrix_text(),
+                    round_no=round_no,
+                    max_rounds=self._gm_config.get("max_rounds", 4),
+                )
+            except Exception as e:
+                logger.warning("gm: 回合分析 LLM 異常", exc_info=True)
+                self._log_error(round_no, "round_summary", e)
+                analysis = None
+        if analysis is None:
+            is_failsafe = True
+            self._log_error(round_no, "round_summary", "LLM 全敗，行 failsafe 決策")
+            summary = FAILSAFE_SUMMARY
         else:
-            if self._prompter is not None:
-                try:
-                    analysis = self._prompter.round_analysis(
-                        agent_names=self.agent_names,
-                        story_seed=self.state.data.get("story_seed", ""),
-                        branch_history=self.state.data.get("branch_point_history", []),
-                        events=delta.events_delta,
-                        conversations=delta.conversations_delta,
-                        matrix_text=store.full_matrix_text(),
-                    )
-                except Exception as e:
-                    logger.warning("gm: 回合分析 LLM 異常", exc_info=True)
-                    self._log_error(round_no, "round_summary", e)
-                    analysis = None
-            if analysis is None:
-                is_failsafe = True
-                self._log_error(round_no, "round_summary", "LLM 全敗，行 failsafe 決策")
-                summary = FAILSAFE_SUMMARY
-            else:
-                summary = analysis.summary
+            summary = analysis.summary
+
+        # [story-weaver:no-quiet] 用過就清，唔會影響下一回合
+        if had_choice:
+            self.state.data["choice_applied"] = False
+            self.state.save()
 
         # 3. 砌決策 + 半成品 timeline entry（player_choice 留空，apply 時補完）
         options = analysis.options if analysis else []
@@ -263,6 +342,14 @@ class GMDirector:
             if record:
                 records.append(record)
 
+        # [story-weaver:force-meeting] 外部世界幹預：玩家嘅決定唔止係內心想法，
+        # 更加係小鎮真實發生嘅事件。強制相關角色移動到共同地點見面。
+        if choice.type in ("option", "option+custom") and choice.option_id:
+            try:
+                self._force_agent_meeting(server, agents, choice, round_no)
+            except Exception:
+                logger.warning("gm: 強制見面失敗", exc_info=True)
+
         # 3. 好感度調整（玩家 slider，delta 語義，經 affinity 嘅 apply_gm_response 落地）
         if choice.affinity_overrides:
             try:
@@ -328,6 +415,10 @@ class GMDirector:
             "skip": "任由發展，小鎮繼續它的日常。",
             "finish": "故事即將進入終章。",
         }
+        # [story-weaver:no-quiet] 標記玩家已做選擇，下回合唔會俾靜默判定吞咗
+        if choice.type not in ("skip",):
+            self.state.data["choice_applied"] = True
+            self.state.save()
         return InjectionReport(
             ok=True,
             message=messages.get(choice.type, "已處理。"),
@@ -358,6 +449,31 @@ class GMDirector:
                     poignancy=self._gm_config["option_poignancy"],
                     poignancy_boost=self._gm_config["poignancy_boost"],
                 )
+                # [story-weaver:scratch-inject] 更新當前意識 → 後續 LLM 決策跟隨玩家選擇
+                try:
+                    agent.scratch.currently = (
+                        f"【命運轉折】{describe}。因此，{agent.scratch.currently}"
+                    )
+                except Exception:
+                    pass
+                # [story-weaver:schedule-revise] 修改當前行動計劃（只改清醒 agent）
+                if agent.is_awake():
+                    try:
+                        event_obj = memory.Event(
+                            agent.name,
+                            PREDICATE_OPTION,
+                            INJECT_OBJECT,
+                            describe=describe,
+                            address=agent.get_tile().get_address(),
+                        )
+                        _plan, de_plan = agent.schedule.current_plan()
+                        start = utils.get_timer().daily_time(de_plan["start"])
+                        duration = de_plan["duration"]
+                        agent.revise_schedule(event_obj, start, duration)
+                    except Exception:
+                        logger.warning(
+                            "gm: %s schedule revise 失敗", agent.name, exc_info=True
+                        )
         except Exception as e:
             logger.warning("gm: 選項注入失敗", exc_info=True)
             error = str(e)
@@ -385,6 +501,32 @@ class GMDirector:
                     poignancy=self._gm_config["custom_poignancy"],
                     poignancy_boost=self._gm_config["poignancy_boost"],
                 )
+                # [story-weaver:scratch-inject] 更新當前意識 → 後續 LLM 決策跟隨玩家命令
+                try:
+                    agents[name].scratch.currently = (
+                        f"【命運驅使】{parsed.command_event_describe}。因此，"
+                        f"{agents[name].scratch.currently}"
+                    )
+                except Exception:
+                    pass
+                # [story-weaver:schedule-revise] 修改當前行動計劃（只改清醒 agent）
+                if agents[name].is_awake():
+                    try:
+                        event_obj = memory.Event(
+                            agents[name].name,
+                            PREDICATE_CUSTOM,
+                            INJECT_OBJECT,
+                            describe=parsed.command_event_describe,
+                            address=agents[name].get_tile().get_address(),
+                        )
+                        _plan, de_plan = agents[name].schedule.current_plan()
+                        start = utils.get_timer().daily_time(de_plan["start"])
+                        duration = de_plan["duration"]
+                        agents[name].revise_schedule(event_obj, start, duration)
+                    except Exception:
+                        logger.warning(
+                            "gm: %s schedule revise 失敗", agents[name].name, exc_info=True
+                        )
         except Exception as e:
             logger.warning("gm: 自訂命令注入失敗", exc_info=True)
             error = str(e)
@@ -398,6 +540,45 @@ class GMDirector:
             source="custom",
             error=error,
         )
+
+    def _force_agent_meeting(self, server, agents: dict, choice, round_no: int) -> None:
+        """[story-weaver:force-meeting] 玩家選擇 → 外部世界真實事件。
+        將所有 agent 移動到共同地點，記錄一次對話。"""
+        if len(agents) < 2:
+            return
+        # 揀共同地點
+        meeting_coord = None
+        for agent in agents.values():
+            try:
+                if agent.is_awake():
+                    meeting_coord = list(agent.coord)
+                    break
+            except Exception:
+                pass
+        if meeting_coord is None:
+            meeting_coord = [94, 21]
+        # 移所有 agent 到共同地點
+        for agent in agents.values():
+            try:
+                agent.coord = meeting_coord[:]
+                agent.path = []
+            except Exception:
+                pass
+        # 記錄見面對話
+        choice_text = getattr(choice, "text", "") or choice.option_id or "命運嘅安排"
+        sim_time = server.config.get("time", "")
+        if not sim_time:
+            from modules import utils
+            sim_time = utils.get_timer().get_date("%Y%m%d-%H:%M")
+        agent_list = list(agents.keys())
+        speakers = " -> ".join(agent_list)
+        meeting_location = "小鎮，咖啡館"
+        convo_lines = [[name, f"（應約前來——命運嘅齒輪開始轉動）"] for name in agent_list]
+        convo_block = {f"{speakers} @ {meeting_location}": convo_lines}
+        if sim_time not in server.game.conversation:
+            server.game.conversation[sim_time] = []
+        server.game.conversation[sim_time].append(convo_block)
+        logger.info("gm: 強制見面 — %d agents @ %s", len(agent_list), meeting_location)
 
     def parse_custom_command(self, text: str) -> CustomCommandParse:
         """自訂命令解析 + 後置校驗。feasible=False 唔消耗回合（邊界 6）。"""

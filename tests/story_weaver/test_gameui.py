@@ -60,6 +60,13 @@ class FakeAgent:
         self.status = {"poignancy": 0}
         self.scratch = SimpleNamespace(currently="")
         self.associate = FakeAssociate()
+        self.schedule = SimpleNamespace(
+            daily_schedule=[],
+            current_plan=lambda: (
+                {"start": 0, "duration": 60, "describe": "工作", "decompose": []},
+                {"start": 0, "duration": 15, "describe": "在書桌前工作"},
+            ),
+        )
         self._n = 0
 
     def _add_concept(self, e_type, event, create=None, expire=None, filling=None,
@@ -69,6 +76,15 @@ class FakeAgent:
         self.associate.memory[e_type].insert(0, concept.node_id)
         self.associate._concepts[concept.node_id] = concept
         return concept
+
+    def is_awake(self):
+        return True
+
+    def get_tile(self):
+        return SimpleNamespace(get_address=lambda: ["village", "house"])
+
+    def revise_schedule(self, event, start, duration):
+        pass  # fake: no-op
 
 
 class FakeSimServer:
@@ -220,9 +236,9 @@ def test_framebuffer_scan(tmp_path):
     server.simulate(2, 10)
     buf = FrameBuffer(folder, FakeMaze())
     result = buf.scan([])
-    # fake maze 路徑得兩點（source→target），所以每 step 每 agent 只有 2 帧有 movement：
-    # step 1 → key 1,2；step 2 → key 61,62
-    assert buf.latest_frame_key() == 62
+    # [story-weaver:movement-interp] 每 step 全部 60 幀都生成（路徑插值），
+    # 唔再只得移動嗰兩幀：step 1 → keys 1-60；step 2 → keys 61-120
+    assert buf.latest_frame_key() == 120
     frames = buf.frames_since(-1)
     assert "0" in frames  # 第 0 帧初始位置
     assert "61" in frames

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: story-weaver
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd generative_agents && gunicorn story_weaver.gameui.game_server:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_BASE_URL
+        sync: false
+    disk:
+      name: checkpoints
+      mountPath: /opt/render/project/src/generative_agents/results
+      sizeGB: 1

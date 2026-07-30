@@ -262,6 +262,21 @@ class RecapService:
 
     # ---------------------------------------------------------------- UI / 導出
 
+    def get_cumulative_text(self, sim_name: str) -> str:
+        """[story-weaver:continuity] 返回連貫故仔敘事文本。"""
+        recap = self._store.load(sim_name)
+        if recap is None:
+            return ""
+        cr = recap.cumulative_recap
+        if cr and cr.text:
+            return cr.text
+        # fallback：手動砌返開端 + 各回合
+        lines = [f"【故事開端】{recap.opening}"]
+        for r in recap.rounds:
+            if r.round_recap:
+                lines.append(r.round_recap)
+        return "\n\n".join(lines)
+
     def get_recap(self, sim_name: str, round_no: int | None = None) -> StoryRecap | None:
         """純讀。round_no 指定時只返回該回合（分頁），其餘欄位照附。"""
         recap = self._store.load(sim_name)

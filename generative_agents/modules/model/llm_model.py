@@ -189,15 +189,22 @@ class OllamaLLMModel(LLMModel):
 
 
 def create_llm_model(llm_config):
-    """Create llm model"""
+    """Create llm model。api_key 空咗會自動讀環境變數（Render 部署安全）。"""
+    import os as _os
 
-    if llm_config["provider"] == "ollama":
-        return OllamaLLMModel(llm_config)
+    config = dict(llm_config)
+    # [story-weaver:deploy] api_key 同 base_url 如果 config 入面係空，就讀 env var
+    if not config.get("api_key", "").strip():
+        config["api_key"] = _os.environ.get("DEEPSEEK_API_KEY", "")
+    if not config.get("base_url", "").strip():
+        config["base_url"] = _os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
-    elif llm_config["provider"] == "openai":
-        return OpenAILLMModel(llm_config)
+    if config["provider"] == "ollama":
+        return OllamaLLMModel(config)
+
+    elif config["provider"] == "openai":
+        return OpenAILLMModel(config)
     else:
         raise NotImplementedError(
             "llm provider {} is not supported".format(llm_config["provider"])
         )
-    return None
