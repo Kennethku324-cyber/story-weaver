@@ -6,7 +6,7 @@
 - gm_llm：data/gm_config.json → llm（GM / 故事回顧用）
 
 api_key 保安：GET 唔會返真 key，只返 api_key_set + 頭 4 位提示；
-POST 收到空 api_key → 保留舊值。兩個檔都係原子寫（tmp + os.replace）。
+POST 收到空 api_key → 清除儲存值，改由部署環境的 Secret 提供。
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def _validate_section(name: str, section: dict) -> str | None:
 
 
 def save_settings(payload: dict) -> list[str]:
-    """寫入三組配置 + pace（每回合步數）。返錯誤列表（空 = 成功）。空 api_key 保留舊值。"""
+    """寫入三組配置 + pace；空 API key 代表使用部署環境 Secret。"""
     errors = []
     for name in ("agent_llm", "embedding", "gm_llm"):
         if name in payload:
@@ -146,7 +146,7 @@ def save_settings(payload: dict) -> list[str]:
         old = node.get(path_keys[-1]) or {}
         new = {k: section.get(k, old.get(k, "")) for k in LLM_KEYS}
         if not (section.get("api_key") or "").strip():
-            new["api_key"] = old.get("api_key", "")  # 空 key → 保留舊值
+            new["api_key"] = ""  # 空 key → 只使用部署環境 Secret
         node[path_keys[-1]] = new
         touched[path] = root
 
