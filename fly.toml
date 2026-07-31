@@ -12,7 +12,6 @@ primary_region = 'sin'
 [env]
   DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
   PYTHON_VERSION = '3.11'
-  HF_HOME = '/app/generative_agents/results/.hf_cache'
 
 [[mounts]]
   source = 'checkpoints'
@@ -33,9 +32,9 @@ primary_region = 'sin'
     handlers = ['http']
 
 [[vm]]
-  memory = '1gb'
+  memory = '2gb'
   cpus = 1
-  memory_mb = 1024
+  memory_mb = 2048
 
 [[statics]]
   guest_path = '/app/generative_agents/frontend/static'

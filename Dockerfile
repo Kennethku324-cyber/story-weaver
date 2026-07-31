@@ -9,9 +9,17 @@ ENV DEEPSEEK_API_KEY=""
 ENV DEEPSEEK_BASE_URL="https://api.deepseek.com"
 ENV PYTHONPATH=/app/generative_agents
 ENV PORT=5001
+ENV HF_HOME=/app/preloaded_hf
 
 # 確保 checkpoints / results 目錄存在
 RUN mkdir -p /app/generative_agents/results/checkpoints
+
+# 預載 HuggingFace embedding model（bake 入 image，runtime 唔使 download）
+RUN python3 -c "\
+from sentence_transformers import SentenceTransformer; \
+model = SentenceTransformer('BAAI/bge-small-zh-v1.5'); \
+print(f'Preloaded: {model.get_sentence_embedding_dimension()} dims') \
+"
 
 # 將內建故事情節 backup 到模板目錄（volume mount 會蓋過 results/checkpoints）
 RUN if [ -d /app/generative_agents/results/checkpoints ]; then \
@@ -24,7 +32,6 @@ RUN echo '#!/bin/bash\n\
 DEST="/app/generative_agents/results/checkpoints"\n\
 SRC="/app/story_templates"\n\
 mkdir -p "$DEST"\n\
-mkdir -p /app/generative_agents/results/.hf_cache\n\
 if [ -d "$SRC" ]; then\n\
   for d in "$SRC"/*/; do\n\
     name=$(basename "$d")\n\
