@@ -195,6 +195,11 @@ function pollState() {
   $.getJSON("/api/state", {
     name: SESSION, since_frame: sinceFrame, since_feed: sinceFeed, client_id: clientId
   }).done(function(resp) {
+    // Each round numbers animation frames from 1 again.
+    if (resp.round > animation_round) {
+      resetAnimationForRound(resp.round);
+      sinceFrame = 0;
+    }
     if (resp.new_frames) {
       Object.assign(all_movement, resp.new_frames);
       console.log("[DEBUG] pollState: received " + Object.keys(resp.new_frames).length + " frames, latest=" + resp.frame_latest + ", all_movement now has " + Object.keys(all_movement).length + " keys");

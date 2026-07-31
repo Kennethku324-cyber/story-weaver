@@ -13,6 +13,17 @@
 	let execute_count_max = tile_width / movement_speed;
 	let execute_count = execute_count_max;
 	let all_movement = {};   // 由 pollState() 漸進 Object.assign 注入
+	let animation_round = 0;
+
+	function resetAnimationForRound(round) {
+		if (round <= animation_round) return;
+		animation_round = round;
+		all_movement = {};
+		step = 1;
+		execute_count = execute_count_max;
+		movement_target = {};
+		last_applied = {};
+	}
 
 	let datetime_options = { weekday: "long", year: "numeric", month: "long", day: "numeric" };
 	let start_datetime = new Date(Date.parse({{ start_datetime|tojson }}));
