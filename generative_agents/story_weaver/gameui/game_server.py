@@ -439,8 +439,11 @@ def create_app() -> Flask:
 
     @app.post("/api/round/start")
     def api_round_start():
+        import sys as _sys
+        print("DEBUG api_round_start called", file=_sys.stderr, flush=True)
         data = request.get_json(silent=True) or {}
         name = data.get("name", "")
+        print(f"DEBUG api_round_start name={name}", file=_sys.stderr, flush=True)
         runner = get_runner(name)
         if runner is None:
             return jsonify({"error": "session 唔存在"}), 404

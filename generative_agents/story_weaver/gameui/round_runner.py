@@ -31,12 +31,14 @@ logger = logging.getLogger(__name__)
 
 SIMULATE_FILE_RE = re.compile(r"^simulate-\d{8}-\d{4}\.json$")
 
-# [story-weaver:debug] 寫 debug log 去 story folder（persistent volume, 可以 SSH 睇）
+# [story-weaver:debug] 寫 debug log 去 story folder + stderr
 def _debug_log(folder: str, msg: str) -> None:
-    import datetime as _dt
+    import datetime as _dt, sys
+    line = f"{_dt.datetime.now().isoformat()} {msg}"
+    print(line, file=sys.stderr, flush=True)
     try:
         with open(os.path.join(folder, "_debug.log"), "a", encoding="utf-8") as f:
-            f.write(f"{_dt.datetime.now().isoformat()} {msg}\n")
+            f.write(line + "\n")
     except Exception:
         pass  # simulate-YYYYMMDD-HHMM.json（start.py 寫檔格式）
 
@@ -399,10 +401,15 @@ class RoundRunner:
         _debug_log(self.folder, f"_run_round_inner: ENTER round={round_no}")
         try:
             # [story-weaver:server-rebuild] 每回合強制重建 server，
-            # 確保 start_step 由 game_ui_state.sim_step_cursor 決定（唔會 re-simulate）
-            _debug_log(self.folder, "_run_round_inner: acquiring _server_lock to null _server")
-            with self._server_lock:
-                self._server = None
+            # 確保 start_step 由 game_ui_state.sim_step_cursor 決定（唔會 re-simulate）。
+            # 但 prewarm 可能仲起緊 server（hold 住 _server_lock），
+            # 所以唔搶 lock 住，等 _get_server 自己排隊。
+            _debug_log(self.folder, "_run_round_inner: waiting for _get_server (prewarm may be building)")
+            # round 1 重用 prewarm 嘅 server（唔使等多次 45s rebuild）
+            # round 2+ 要 rebuild（start_step 唔同，唔可以 re-simulate）
+            if round_no > 1:
+                with self._server_lock:
+                    self._server = None
             state = self.store.load()
             logger.info(
                 "round_runner: 第 %d 回合開始 — sim_step_cursor=%d, steps=%d",
