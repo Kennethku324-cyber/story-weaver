@@ -326,25 +326,35 @@ class RoundRunner:
 
     def _get_server(self):
         # 鎖住：prewarm 同 start_round 可能同時建 server（GenerativeAgentsMap 係全局單例）
+        _debug_log(self.folder, "_get_server: waiting for _server_lock...")
         with self._server_lock:
+            _debug_log(self.folder, f"_get_server: lock acquired, _server is None = {self._server is None}")
             if self._server is None:
+                _debug_log(self.folder, "_get_server: building server...")
                 self._server = self._build_server()
+                _debug_log(self.folder, "_get_server: server built")
         return self._server
 
     def prewarm(self) -> None:
         """背景預建 SimulateServer：等玩家撳掣時唔使即場等重建（新舊故事都做）。"""
         if self._server is not None or self._server_factory is not None:
+            _debug_log(self.folder, "prewarm: skipped (already built)")
             return
         try:
+            _debug_log(self.folder, "prewarm: spawning prewarm thread")
             threading.Thread(target=self._prewarm_run, daemon=True).start()
         except Exception:
+            _debug_log(self.folder, f"prewarm: FAILED to spawn thread")
             logger.warning("round_runner: prewarm 失敗", exc_info=True)
 
     def _prewarm_run(self) -> None:
+        _debug_log(self.folder, "_prewarm_run: ENTER")
         try:
             self._get_server()
+            _debug_log(self.folder, "_prewarm_run: server built OK")
             logger.info("round_runner: %s server 預熱完成", self.session)
-        except Exception:
+        except Exception as e:
+            _debug_log(self.folder, f"_prewarm_run: FAILED {e}")
             logger.warning("round_runner: %s server 預熱失敗", self.session, exc_info=True)
 
     def start_round(self) -> int:
