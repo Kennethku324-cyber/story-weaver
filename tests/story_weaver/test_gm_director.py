@@ -75,12 +75,13 @@ class FakeAgent:
         self.status = {"poignancy": 0}
         self.scratch = FakeScratch()
         self.associate = FakeAssociate()
+        d0 = {"start": 0, "duration": 60, "describe": "工作", "decompose": []}
+        d1 = {"start": 0, "duration": 15, "describe": "在書桌前工作"}
+        self._plan_block = d0
+        self._de_plan = d1
         self.schedule = SimpleNamespace(
-            daily_schedule=[],
-            current_plan=lambda: (
-                {"start": 0, "duration": 60, "describe": "工作", "decompose": []},
-                {"start": 0, "duration": 15, "describe": "在書桌前工作"},
-            ),
+            daily_schedule=[d0],
+            current_plan=lambda: (self._plan_block, self._de_plan),
         )
         self.injected = []
         self.coord = [1, 1]
@@ -142,18 +143,22 @@ class FakeLLM:
         return self.responses.get(caller, failsafe)
 
 
-def make_analysis():
-    return GMRoundAnalysis(
-        summary="阿珍喺酒吧撞破阿強收埋一封信，兩人差啲嗌交。",
-        branch_point="阿珍會唔會當面質問阿強封信嘅內容？",
-        options=[
+def make_analysis(**overrides):
+    kw = {
+        "summary": "阿珍喺酒吧撞破阿強收埋一封信，兩人差啲嗌交。",
+        "branch_point": "阿珍會唔會當面質問阿強封信嘅內容？",
+        "options": [
             GMOption(id="A", title="當面對質", predicted="兩人關係進一步破裂"),
             GMOption(id="B", title="暗中調查", predicted="阿珍掌握更多線索"),
         ],
-        suggested_affinity_changes=[
+        "suggested_affinity_changes": [
             AffinitySuggestion(from_agent="阿珍", to_agent="阿強", delta=-15, reason="阿強隱瞞令阿珍起疑")
         ],
-    )
+        "next_scene_goal": "",
+        "next_forced_meetings": [],
+    }
+    kw.update(overrides)
+    return GMRoundAnalysis(**kw)
 
 
 def make_director(tmp_path, llm, names=NAMES):
@@ -408,7 +413,8 @@ def test_parse_command_filters_hallucinated_targets(tmp_path):
     assert result.targets == ["阿珍"]  # 幻覺名被過濾
 
 
-def test_parse_command_all_unknown_targets_infeasible(tmp_path):
+def test_parse_command_all_unknown_targets_cleared_not_rejected(tmp_path):
+    """LLM 幻覺 targets → 清空 targets（apply to all），唔 reject 成個命令。"""
     parsed = CustomCommandParse(
         targets=["鬼"], command_event_describe="鬼做咗啲嘢。",
         feasible=True, refuse_reason=None,
@@ -416,7 +422,9 @@ def test_parse_command_all_unknown_targets_infeasible(tmp_path):
     llm = FakeLLM({"gm_custom_command": parsed})
     gm = make_director(tmp_path, llm)
     result = gm.parse_custom_command("叫鬼出場")
-    assert result.feasible is False
+    # 命令仍然 feasible（targets 被清空 = apply to all）
+    assert result.feasible is True
+    assert result.targets == []
 
 
 def test_parse_command_empty_text():
@@ -515,3 +523,205 @@ def test_apply_expired_option_rejected(tmp_path):
     # pending 保留，可以重試
     assert gm.get_pending_decision() is not None
     assert all(len(server.game.agents[n].injected) == 0 for n in NAMES)
+
+
+# ---------------------------------------------------------------- scene direction
+
+
+def test_scene_direction_stored_from_analysis(tmp_path):
+    """GM analysis 入面嘅 scene direction fields 會存入 gm_state。"""
+    analysis = make_analysis(
+        next_scene_goal="阿強必須向阿珍解釋封信嘅來歷",
+        next_forced_meetings=[["阿珍", "阿強"]],
+    )
+    llm = FakeLLM({"gm_round_summary": analysis})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    gm.on_round_end(server, 1)
+
+    assert gm.state.data["next_scene_goal"] == "阿強必須向阿珍解釋封信嘅來歷"
+    assert gm.state.data["next_forced_meetings"] == [["阿珍", "阿強"]]
+
+
+def test_scene_direction_applied_on_next_round_start(tmp_path):
+    """on_round_start 會 consume 場景指導並改寫 agent currently + move agents。"""
+    llm = FakeLLM()
+    gm = make_director(tmp_path, llm)
+    # 手動 set 場景指導（模擬上回合 on_round_end 存嘅）
+    gm.state.data["next_scene_goal"] = "阿強同阿珍攤牌"
+    gm.state.data["next_forced_meetings"] = [["阿珍", "阿強"]]
+    gm.state.save()
+
+    server = FakeServer()
+    gm.on_round_start(server)
+
+    # 場景指導已被 consume
+    assert gm.state.data["next_scene_goal"] == ""
+    assert gm.state.data["next_forced_meetings"] == []
+
+    # Agent currently 包含場景目標
+    agent_a = server.game.agents["阿珍"]
+    assert "攤牌" in agent_a.scratch.currently
+
+    # 兩個 agent 被 move 到同一地點
+    a_coord = tuple(agent_a.coord)
+    b_coord = tuple(server.game.agents["阿強"].coord)
+    assert a_coord == b_coord
+
+
+def test_plan_block_overwrite_on_apply_option(tmp_path):
+    """apply_player_choice 後，agent schedule 嘅 plan block describe 被改寫。"""
+    analysis = make_analysis()
+    llm = FakeLLM({"gm_round_summary": analysis})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    gm.on_round_end(server, 1)
+
+    report = gm.apply_player_choice(server, 1, PlayerChoice(type="option", option_id="A"))
+    assert report.ok
+
+    # 阿珍嘅 plan block 應該已被改寫（而唔係原本嘅「工作」）
+    agent = server.game.agents["阿珍"]
+    assert "當面對質" in agent._plan_block["describe"]
+
+
+def test_last_player_choice_recorded(tmp_path):
+    """玩家選擇後 last_player_choice 寫入 gm_state，skip 時壓力上升。"""
+    analysis = make_analysis()
+    llm = FakeLLM({"gm_round_summary": analysis})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    gm.on_round_end(server, 1)
+
+    # 揀 option
+    gm.apply_player_choice(server, 1, PlayerChoice(type="option", option_id="A"))
+    assert "last_player_choice" in gm.state.data
+    assert "當面對質" in gm.state.data["last_player_choice"]
+
+    # 揀 skip → 壓力上升
+    old_pressure = int(gm.state.data.get("dramatic_pressure", 1))
+    gm.on_round_start(server)
+    gm.on_round_end(server, 2)
+    gm.apply_player_choice(server, 2, PlayerChoice(type="skip"))
+    new_pressure = int(gm.state.data.get("dramatic_pressure", 1))
+    assert new_pressure >= old_pressure
+
+
+def test_pick_conflict_pair_returns_pair(tmp_path):
+    """_pick_conflict_pair 會由 affinity matrix 揀最極端 pair。"""
+    llm = FakeLLM()
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    # 注入 affinity data
+    server.config["affinity"] = {
+        "阿珍": {"阿強": {"value": -90}, "小美": {"value": 30}, "阿明": {"value": 0}},
+        "阿強": {"阿珍": {"value": 85}, "小美": {"value": 10}, "阿明": {"value": -5}},
+    }
+    pair = gm._pick_conflict_pair(server)
+    assert len(pair) == 1
+    assert len(pair[0]) == 2
+    # -90 係最極端值，所以應該揀阿珍同阿強
+    assert "阿珍" in pair[0]
+    assert "阿強" in pair[0]
+
+
+def test_scene_direction_integration_round_flow(tmp_path):
+    """Full round flow: on_round_end stores scene → on_round_start consumes it."""
+    analysis = make_analysis(
+        next_scene_goal="小美要揭露一個秘密",
+        next_forced_meetings=[["小美", "阿明"]],
+    )
+    llm = FakeLLM({"gm_round_summary": analysis})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+
+    # Round 1
+    gm.on_round_start(server)
+    gm.on_round_end(server, 1)
+    assert gm.state.data["next_scene_goal"] == "小美要揭露一個秘密"
+
+    # Round 2: 場景指導被落地
+    gm.on_round_start(server)
+    # consumed
+    assert gm.state.data["next_scene_goal"] == ""
+    # 小美 currently 包含場景描述
+    agent = server.game.agents["小美"]
+    assert "秘密" in agent.scratch.currently
+    # 小美同阿明被 move 到同一地點
+    assert tuple(agent.coord) == tuple(server.game.agents["阿明"].coord)
+
+
+# ---------------------------------------------------------------- agent goals + day boundary + chat steer
+
+
+def test_agent_goals_populated_from_scene_direction(tmp_path):
+    """場景指導 forced_meetings 入面嘅角色會自動得到 agent goal。"""
+    analysis = make_analysis(
+        next_scene_goal="阿強要向阿珍表白",
+        next_forced_meetings=[["阿珍", "阿強"]],
+    )
+    llm = FakeLLM({"gm_round_summary": analysis})
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    gm.on_round_start(server)
+    gm.on_round_end(server, 1)
+
+    goals = gm.state.data.get("agent_goals", {})
+    assert "阿珍" in goals
+    assert "阿強" in goals
+    assert "表白" in goals["阿強"] or "表白" in goals["阿珍"]
+
+
+def test_agent_goals_injected_to_currently(tmp_path):
+    """Agent goal 會喺每回合 on_round_start 自動注入 currently。"""
+    llm = FakeLLM()
+    gm = make_director(tmp_path, llm)
+    gm.state.data["agent_goals"] = {"阿珍": "向阿強表白", "阿強": "回應阿珍嘅感情"}
+    gm.state.save()
+
+    server = FakeServer()
+    gm.on_round_start(server)
+    agent = server.game.agents["阿珍"]
+    assert "向阿強表白" in agent.scratch.currently
+
+
+def test_day_boundary_triggers_re_anchor(tmp_path):
+    """跨日時 on_round_start 會用更 aggressive wording re-anchor 場景指導。"""
+    llm = FakeLLM()
+    gm = make_director(tmp_path, llm)
+    gm.state.data["last_round_date"] = "20260729"
+    gm.state.data["next_scene_goal"] = "阿珍要搵出真相"
+    gm.state.save()
+
+    server = FakeServer()
+    server.config["time"] = "20260730-08:00"  # 新一日
+    gm.on_round_start(server)
+    agent = server.game.agents["阿珍"]
+    assert "命運延續" in agent.scratch.currently
+
+
+def test_chat_steer_injects_thought_concept(tmp_path):
+    """_apply_scene_direction 會 inject thought concept 去 steer 對話主題。"""
+    llm = FakeLLM()
+    gm = make_director(tmp_path, llm)
+    server = FakeServer()
+    # 直接 call _apply_scene_direction（跳過 on_round_start）
+    before_counts = {n: len(server.game.agents[n].injected) for n in NAMES}
+    gm._apply_scene_direction(
+        server,
+        scene_goal="阿強要向阿珍表白",
+        forced_meetings=[["阿珍", "阿強"]],
+    )
+    # 兩個角色應該各自收到一個 thought concept
+    for name in ["阿珍", "阿強"]:
+        new_thoughts = [
+            inj for inj in server.game.agents[name].injected
+            if inj["e_type"] == "thought"
+        ]
+        assert len(new_thoughts) >= 1
+        # thought 內容應該同表白有關
+        thought_text = " ".join(t["event"].get_describe() for t in new_thoughts)
+        assert "表白" in thought_text or "見面" in thought_text

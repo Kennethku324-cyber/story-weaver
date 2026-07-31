@@ -223,6 +223,7 @@
 		document.getElementById("ui-anim-step").textContent = step;
 		// 未有 frame 數據就唔好浪費 step（新 game 等緊第一次推演）
 		if (Object.keys(all_movement).length === 0) return;
+			if (step % 30 === 0 && step > 0) { var _n=Object.keys(personas).slice(0,2); var _p=_n.map(function(n){var s=personas[n];return n+"@("+Math.round(s.body.x)+","+Math.round(s.body.y)+")";}); console.log("[MOVE] step="+step+" "+_p.join(" | ")); }
 
 		for (let i = 0; i < Object.keys(personas).length; i++) {
 			let curr_persona_name = Object.keys(personas)[i];
@@ -242,7 +243,8 @@
 						last_applied[agent_key] = [curr_x, curr_y];
 
 						let action = all_movement[step][agent_key]["action"];
-						let act = action.length > 25 ? action.substring(0, 20)+"..." : action;
+						// label_text = action（目前行動），currently 留俾角色 detail panel
+						let act = action.length > 25 ? action.substring(0, 22)+"…" : action;
 						pronunciatios[curr_persona_name].setText(curr_persona_name + ": " + act);
 					}
 
@@ -303,7 +305,7 @@
 					if (!last || last[0] !== m[0] || last[1] !== m[1]) { motion = true; break; }
 				}
 			}
-			execute_count_max = motion ? 30 : 3;
+			execute_count_max = motion ? 60 : 5;
 
 			start_datetime = new Date(start_datetime.getTime() + step_size);
 			currentTime.setText(start_datetime.toLocaleTimeString("zh-HK", datetime_options));

@@ -127,8 +127,13 @@ class RoundRunner:
             return {}
 
     def _load_sim_config(self) -> dict:
-        with open(os.path.join(self.folder, "sim_config.json"), "r", encoding="utf-8") as f:
-            return json.load(f)
+        path = os.path.join(self.folder, "sim_config.json")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            logger.warning("round_runner: sim_config.json 損毀（%s）", path, exc_info=True)
+            return {"agents": {}, "time": {"start": "20240213-09:30"}, "stride": 10}
 
     def init_if_needed(self) -> None:
         """首次見到 session：建 game_ui_state + gm_state + story_recap（全部冪等）。"""
@@ -211,11 +216,39 @@ class RoundRunner:
                 logger.warning("round_runner: RecapService 初始化失敗", exc_info=True)
         return self._recap
 
+    # ---------------------------------------------------------------- 清理
+
+    def _cleanup_corrupt_files(self) -> None:
+        """[story-weaver:cleanup] 每次啟動／重玩時清走空檔同損毀 storage，
+        防止 Ctrl+C 留低嘅 empty JSON 令 llama_index crash。"""
+        import glob as _glob
+        import shutil as _shutil
+        # 清空檔
+        for pattern in ["simulate-*.json", "conversation.json"]:
+            for f in _glob.glob(os.path.join(self.folder, pattern)):
+                try:
+                    if os.path.getsize(f) == 0:
+                        os.remove(f)
+                        logger.info("round_runner: 清走空檔 %s", os.path.basename(f))
+                except OSError:
+                    pass
+        # 清損毀嘅 llama_index storage — 與其續個 file check，
+        # 索性成個 storage dir 剷走等佢重建（file 唔見咗嘅話 llama_index 唔識自己 create）
+        storage_dir = os.path.join(self.folder, "storage")
+        if os.path.isdir(storage_dir):
+            try:
+                _shutil.rmtree(storage_dir)
+                logger.info("round_runner: 清走 storage 目錄（將會重建）")
+            except OSError:
+                logger.warning("round_runner: 清走 storage 失敗", exc_info=True)
+
     # ---------------------------------------------------------------- 恢復
 
     def recover(self) -> RecoveryInfo:
-        """server 啟動 / 首次訪問時調：掃 checkpoint、回滾死喺中途嘅狀態、重建 FrameBuffer。"""
+        """server 啟動 / 首次訪問時調：掃 checkpoint、清 corrupt 檔、回滾死喺中途嘅狀態、重建 FrameBuffer。"""
         info = RecoveryInfo()
+        # [story-weaver:cleanup] 清走空嘅 / 損毀嘅 checkpoint 同 conversation 檔
+        self._cleanup_corrupt_files()
         last_step, skipped, _config = scan_checkpoints(self.folder)
         info.last_complete_step = last_step
         info.skipped_files = skipped
@@ -233,14 +266,10 @@ class RoundRunner:
             info.message = f"已恢復至第 {state.round + 1} 回合（{last_step} 步），部分進度遺失"
         # 重建 FrameBuffer（全量掃一次；memory-only）
         self.frames.scan(processed_steps=[])
-        # [story-weaver:idle] 未有 checkpoint 就生成初始踱步幀，角色唔會死企
-        if self.frames.latest_frame_key() == 0:
-            try:
-                positions = self._read_agent_positions()
-                if positions:
-                    self.frames.seed_idle_frames(positions)
-            except Exception:
-                logger.warning("round_runner: 初始 idle frames 生成失敗", exc_info=True)
+        # [story-weaver:idle-fix] 唔再生 idle frames — 會同 checkpoint frame keys
+        # 碰撞導致 sinceFrame 提前 advance → checkpoint data 永遠 invisible。
+        # 角色 spawn 位置由 Phaser create() 用 template data 設定，
+        # checkpoint data 到咗之後先開始郁。
         if skipped:
             logger.warning("round_runner: 跳過損毀 checkpoint：%s", skipped)
         return info
@@ -250,15 +279,35 @@ class RoundRunner:
     def _build_server(self):
         if self._server_factory is not None:
             return self._server_factory(self)
-        from start import SimulateServer, get_config_from_log
+        from start import SimulateServer
 
-        last_step, _, latest = scan_checkpoints(self.folder)
+        # [story-weaver:start-step] 用 game_ui_state.sim_step_cursor 做 start_step，
+        # 確保跨回合唔會 re-simulate 相同 steps
+        state = self.store.load()
+        start_step = state.sim_step_cursor
+
+        # config 永遠由 sim_config.json 讀（唔用 get_config_from_log，
+        # 因為佢會改寫 agent config_path → 指錯 location → agent 冇 config → 唔郁）
+        config = self._load_sim_config()
+
+        # 如果有 checkpoint，續接遊戲時間 + agent 位置
+        _last, _skip, latest = scan_checkpoints(self.folder)
         if latest is not None:
-            config = get_config_from_log(self.folder)
-            start_step = config["step"]
-        else:
-            config = self._load_sim_config()
-            start_step = 0
+            ckpt_time = latest.get("time", "")
+            if ckpt_time and isinstance(ckpt_time, str):
+                # [story-weaver:time-advance] 防止 checkpoint filename collision：
+                # 唔 advance 嘅話下回合第一個 checkpoint 會同上一回合最後一個撞名
+                import datetime as _dt
+                stride = int(config.get("stride", 10))
+                t = _dt.datetime.strptime(ckpt_time, "%Y%m%d-%H:%M")
+                t += _dt.timedelta(minutes=stride)
+                config["time"] = {"start": t.strftime("%Y%m%d-%H:%M")}
+            # [story-weaver:gm-walk] 續接 agent 位置（GM teleport 之後唔會彈返原位）
+            ckpt_agents = latest.get("agents") or {}
+            for name in config.get("agents", {}):
+                if name in ckpt_agents and "coord" in ckpt_agents[name]:
+                    config["agents"][name]["coord"] = ckpt_agents[name]["coord"]
+
         return SimulateServer(
             self.session, self.static_root, self.folder, config,
             start_step=start_step, verbose="warn",
@@ -316,15 +365,49 @@ class RoundRunner:
 
     def _run_round(self, round_no: int) -> None:
         try:
+            self._run_round_inner(round_no)
+        except Exception as e:
+            # [story-weaver:crash-guard] catch 所有漏網 exception，
+            # 確保 server process 唔會死（之前有 crash 令成個 server 斷線）
+            import traceback as _tb
+            logger.critical(
+                "round_runner: 回合 %d 致命錯誤，server 繼續運行\n%s",
+                round_no, _tb.format_exc()
+            )
+            try:
+                with self.store.mutate() as s:
+                    s.status = UIStatus.ERROR
+                    s.error = f"致命錯誤：{e}"
+            except Exception:
+                pass
+            # lock 已喺 _run_round_inner 嘅 finally 釋放，唔使再 release
+
+    def _run_round_inner(self, round_no: int) -> None:
+        try:
+            # [story-weaver:server-rebuild] 每回合強制重建 server，
+            # 確保 start_step 由 game_ui_state.sim_step_cursor 決定（唔會 re-simulate）
+            with self._server_lock:
+                self._server = None
+            state = self.store.load()
+            logger.info(
+                "round_runner: 第 %d 回合開始 — sim_step_cursor=%d, steps=%d",
+                round_no, state.sim_step_cursor, self.steps_per_round()
+            )
             server = self._get_server()
+            logger.info(
+                "round_runner: server built — start_step=%d, config_step=%d",
+                server.start_step, server.config.get("step", -1)
+            )
             gm = self._get_gm()
             gm.on_round_start(server)
             steps = self.steps_per_round()
-            state = self.store.load()
             server.simulate(steps, state.stride)
+            logger.info("round_runner: simulate 完成 — %d steps", steps)
             self._on_round_complete(server, round_no, steps)
         except Exception as e:
-            logger.exception("round_runner: 回合 %d 推演失敗", round_no)
+            import traceback
+            tb = traceback.format_exc()
+            logger.error("round_runner: 回合 %d 推演失敗\n%s", round_no, tb)
             try:
                 with self.store.mutate() as s:
                     s.status = UIStatus.ERROR

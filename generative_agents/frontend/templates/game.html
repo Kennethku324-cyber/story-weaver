@@ -33,6 +33,8 @@
   .tl-dialogue { margin: .3em 0 .3em 1em; font-size: 13px; color: #333; }
   .tl-choice { color: #b3541e; font-size: 13px; }
   #char-count { font-size: 12px; color: #999; }
+  .feed-round-delim { text-align:center; font-size:12px; color:#b3541e;
+                      border-top:1px solid #e8c8b0; margin:.6em 0 .3em; padding:.2em 0; }
 </style>
 
 <div id="topbar">
@@ -43,11 +45,17 @@
   <span><span class="label">遊戲內時間</span> <span id="ui-sim-time">—</span></span>
   <span style="margin-left:auto">
     <button id="btn-round">開始推演</button>
+    <button id="btn-replay" style="background:#888;color:#fff;border:none;border-radius:999px;padding:.5em 1.2em;margin-left:.5em;display:none">重玩</button>
   </span>
 </div>
 <div id="error-banner"></div>
 <div id="readonly-banner">觀察模式：另一個分頁正在主持此故事。
   <button id="btn-takeover" style="margin-left:1em;border:1px solid #664d03;background:#fff;border-radius:999px;padding:.1em .8em;cursor:pointer">用呢個分頁主持</button>
+</div>
+<!-- [story-weaver:story-banner] 持久顯示當前故事狀態 -->
+<div id="story-banner" style="display:none; padding:.4em 1em; background:#fdf3ec; border-bottom:2px solid #b3541e; font-size:14px; color:#333;">
+  <span id="sb-goal" style="font-weight:bold;"></span>
+  <span id="sb-pressure" style="margin-left:1em; color:#b3541e;"></span>
 </div>
 
 <div class="row" style="margin:0">
@@ -75,8 +83,17 @@
     <div class="media" id="on_screen_det_content-{{ p }}"
          style="background-color:#EEEEEE; border-radius:5px; display:none; margin:.4em; padding:.6em;">
       <div class="media-body">
-        <p><span id="agent_desc__{{ p }}"></span></p>
-        <p>當前活動：<span id="current_action__{{ p }}"></span> @ <span id="target_address__{{ p }}"></span></p>
+        <strong>{{ persona_display[p] }}</strong>
+        {% if persona_profiles.get(p) %}
+        <p style="font-size:13px; color:#555; margin:.2em 0">{{ persona_profiles[p] }}</p>
+        {% endif %}
+        {% if persona_relations.get(p) %}
+        <p style="font-size:12px; color:#b3541e; margin:.2em 0">
+          {% for rel in persona_relations[p] %}{{ rel }}{% if not loop.last %} ｜ {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+        <p style="margin:.2em 0"><span id="agent_desc__{{ p }}"></span></p>
+        <p style="margin:.2em 0">當前活動：<span id="current_action__{{ p }}"></span> @ <span id="target_address__{{ p }}"></span></p>
       </div>
     </div>
     {% endfor %}
@@ -149,6 +166,7 @@
         <div id="finale-epilogues"></div>
       </div>
       <div class="modal-footer">
+        <a class="btn btn-default" id="finale-export-txt" href="#">下載故事（TXT）</a>
         <a class="btn btn-default" id="finale-export" href="#">導出故事（Markdown）</a>
       </div>
     </div>
@@ -180,6 +198,13 @@ function pollState() {
     if (resp.new_frames) {
       Object.assign(all_movement, resp.new_frames);
       console.log("[DEBUG] pollState: received " + Object.keys(resp.new_frames).length + " frames, latest=" + resp.frame_latest + ", all_movement now has " + Object.keys(all_movement).length + " keys");
+      // [story-weaver:debug] sample first frame's first agent position
+      var newKeys = Object.keys(resp.new_frames).sort(function(a,b){return parseInt(a)-parseInt(b);});
+      if (newKeys.length > 0) {
+        var sf = resp.new_frames[newKeys[0]];
+        var sa = Object.keys(sf)[0];
+        if (sa) console.log("[DEBUG] frame " + newKeys[0] + " " + sa + " pos=" + JSON.stringify(sf[sa].movement) + " act=" + (sf[sa].action||"").substring(0,30));
+      }
       $("#ui-anim-total").text(resp.frame_latest || "等待推演");
     }
     sinceFrame = resp.frame_latest || sinceFrame;
@@ -188,13 +213,28 @@ function pollState() {
     $("#ui-status").text(STATUS_TEXT[resp.status] || resp.status);
     $("#ui-sim-time").text(resp.sim_time || "—");
 
-    appendFeed(resp.new_feed || []);
+    appendFeed(resp.new_feed || [], resp.round);
     sinceFeed = resp.feed_latest || sinceFeed;
     renderAffinity(resp.affinity || {});
     updateAgentsMeta(resp.agents_meta || {});
 
     if (resp.error) { $("#error-banner").text(resp.error).show(); }
     else { $("#error-banner").hide(); }
+
+    // [story-weaver:story-banner] 更新持久故事狀態橫幅
+    var ss = resp.story_state || {};
+    if (ss.scene_goal || ss.last_summary) {
+      $("#story-banner").show();
+      var banner_parts = [];
+      if (ss.scene_goal) banner_parts.push("🎬 " + ss.scene_goal);
+      if (ss.last_summary) banner_parts.push("📜 " + ss.last_summary);
+      $("#sb-goal").text(banner_parts.join(" ｜ "));
+      var pressure = ss.pressure || 1;
+      var bars = "▮".repeat(pressure) + "▯".repeat(5 - pressure);
+      $("#sb-pressure").text("壓力 " + bars + " (" + pressure + "/5)");
+    } else {
+      $("#story-banner").hide();
+    }
 
     $("#readonly-banner").toggle(resp.readonly === true);
     isReadonly = resp.readonly === true;
@@ -217,6 +257,8 @@ function pollState() {
     if (resp.status === "finished" && resp.finale) {
       showFinale(resp.finale);
     }
+    // [story-weaver:replay] 故事完結或暫停時顯示重玩掣
+    $("#btn-replay").toggle(resp.status === "finished" || resp.status === "idle");
   }).always(function() {
     setTimeout(pollState, 2000);
   });
@@ -231,8 +273,15 @@ function heartbeat() {
 
 // ---------------------------------------------------------------- feed / 面板
 
-function appendFeed(items) {
+let _feedRound = 0;  // [story-weaver:round-delimiter]
+
+function appendFeed(items, currentRound) {
   const feed = $("#feed");
+  // [story-weaver:round-delimiter] 新回合開始時插入分隔
+  if (currentRound && currentRound > 0 && currentRound !== _feedRound && items.length > 0) {
+    _feedRound = currentRound;
+    feed.append($('<div class="feed-round-delim">').text("── 第 " + _feedRound + " 回合 ──"));
+  }
   items.forEach(function(it) {
     let html = "";
     const time = $('<span class="feed-time">').text(it.sim_time || "").prop("outerHTML");
@@ -365,21 +414,36 @@ function submitDecision(payload) {
     if (resp.accepted) {
       modalOpen = false;
       $("#decision-modal").modal("hide");
+      // [story-weaver:auto-round] 收埋 modal 後自動推演，唔使再撳掣
+      if (resp.status !== "finished") {
+        setTimeout(function() {
+          $.ajax({ url: "/api/round/start", method: "POST", contentType: "application/json",
+            data: JSON.stringify({ name: SESSION, command: "start", client_id: clientId })
+          }).fail(function(xhr) {
+            var resp2 = xhr.responseJSON || {};
+            var msg2 = resp2.reason || resp2.error || resp2.message || "未能開始";
+            $("#error-banner").text(msg2).show();
+          });
+        }, 1500);
+      }
     } else {
-      // 命令被拒（feasible=false）：保留已輸入內容
+      // 命令被拒（feasible=false）：保留已輸入內容，re-enable 掣
       $("#dm-error").text(resp.message || "命令未能執行。").show();
+      $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", false);
     }
   }).fail(function(xhr) {
-    const msg = (xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.reason)) || "提交失敗，請再試一次。";
+    var resp = xhr.responseJSON || {};
+    var msg = resp.error || resp.reason || resp.message || "提交失敗，請再試一次。";
     $("#dm-error").text(msg).show();
+    // 失敗先 re-enable（成功咗 modal 已閂，唔需要）
+    $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", false);
   }).always(function() {
     $("#dm-working").hide();
-    $("#dm-confirm, #dm-skip, #dm-finish").prop("disabled", false);
   });
 }
 
 $("#dm-confirm").on("click", function() {
-  const btn = $(this).prop("disabled", true);
+  if ($(this).prop("disabled")) return;  // 防 double click
   const payload = {};
   const active = $(".option-card.active").first();
   if (active.length) payload.choice_id = active.data("option-id");
@@ -389,10 +453,15 @@ $("#dm-confirm").on("click", function() {
     payload.affinity_overrides = window._lastSuggestions || [];
   }
   submitDecision(payload);
-  setTimeout(function() { btn.prop("disabled", false); }, 3000);  // 防重複提交
 });
-$("#dm-skip").on("click", function() { submitDecision({}); });
-$("#dm-finish").on("click", function() { submitDecision({ finish: true }); });
+$("#dm-skip").on("click", function() {
+  if ($(this).prop("disabled")) return;
+  submitDecision({});
+});
+$("#dm-finish").on("click", function() {
+  if ($(this).prop("disabled")) return;
+  submitDecision({ finish: true });
+});
 $("#dm-custom").on("input", function() {
   $("#char-count").text($(this).val().length + " / 500");
 });
@@ -413,6 +482,7 @@ function showFinale(finale) {
     eps.append($("<p>").append($("<b>").text(e.name + "："), $("<span>").text(e.epilogue)));
   });
   $("#finale-export").attr("href", "/api/export/story?name=" + encodeURIComponent(SESSION) + "&format=md");
+  $("#finale-export-txt").attr("href", "/api/export/story?name=" + encodeURIComponent(SESSION) + "&format=txt");
   $("#finale-modal").modal("show");
 }
 
@@ -438,9 +508,28 @@ $("#btn-round").on("click", function() {
   const btn = $(this).prop("disabled", true);
   $.ajax({ url: "/api/round/start", method: "POST", contentType: "application/json",
     data: JSON.stringify({ name: SESSION, command: "start", client_id: clientId })
+  }).done(function() {
+    // 成功 → poll loop 會根據 status 管理 button state
   }).fail(function(xhr) {
-    const msg = (xhr.responseJSON && (xhr.responseJSON.reason || xhr.responseJSON.error)) || "未能開始";
+    var resp3 = xhr.responseJSON || {};
+    var msg3 = resp3.reason || resp3.error || resp3.message || "未能開始";
+    $("#error-banner").text(msg3).show();
+    btn.prop("disabled", false);  // 失敗先 re-enable
+  });
+});
+
+// [story-weaver:replay] 重玩：清空進度，保留角色同故事開端
+$("#btn-replay").on("click", function() {
+  if (!confirm("重玩會清空所有進度，但保留角色設定同故事開端。確定？")) return;
+  const btn = $(this).prop("disabled", true).text("重設中…");
+  $.ajax({ url: "/api/story/reset", method: "POST", contentType: "application/json",
+    data: JSON.stringify({ name: SESSION })
+  }).done(function() {
+    location.reload();
+  }).fail(function(xhr) {
+    const msg = (xhr.responseJSON && xhr.responseJSON.error) || "重設失敗";
     $("#error-banner").text(msg).show();
+    btn.prop("disabled", false).text("重玩");
   });
 });
 

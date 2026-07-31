@@ -13,6 +13,8 @@
                   padding: .4em 1.2em; text-decoration: none; }
   .btn-delete { background: none; color: #c00; border: 1px solid #c00; border-radius: 999px;
                 padding: .4em 1em; cursor: pointer; }
+  .btn-replay { background: none; color: #888; border: 1px solid #888; border-radius: 999px;
+                padding: .4em 1em; cursor: pointer; margin-left: .4em; }
 </style>
 
 <div class="home-wrap">
@@ -61,8 +63,23 @@
           else window.alert(body.error || "刪除失敗");
         });
       });
+      // [story-weaver:replay] 重玩掣 — 清空進度保留角色
+      var replay = document.createElement("button");
+      replay.className = "btn-replay";
+      replay.textContent = "重玩";
+      replay.addEventListener("click", function () {
+        if (!window.confirm("重玩「" + s.name + "」？進度會清空，但角色設定同故事開端會保留。")) return;
+        fetch("/api/story/reset", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: s.name }),
+        }).then(function (r) { return r.json(); }).then(function (body) {
+          if (body.ok) location.href = "/game?name=" + encodeURIComponent(s.name);
+          else window.alert(body.error || "重設失敗");
+        });
+      });
       item.appendChild(info);
       item.appendChild(go);
+      item.appendChild(replay);
       item.appendChild(del);
       list.appendChild(item);
     });

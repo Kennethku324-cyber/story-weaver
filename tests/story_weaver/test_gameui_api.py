@@ -76,9 +76,9 @@ def test_full_round_flow(client):
     runner = game_server.get_runner("s1")
     assert wait_status(runner, UIStatus.WAITING_DECISION)
 
-    # 推演完再撳 → 409
+    # 推演完再撳 → 409（或 429 rate limit）
     resp = client.post("/api/round/start", json={"name": "s1", "command": "next"})
-    assert resp.status_code == 409
+    assert resp.status_code in (409, 429)
     assert resp.get_json()["accepted"] is False
 
     # 輪詢：pending_decision + feed + frames

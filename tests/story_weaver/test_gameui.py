@@ -92,6 +92,7 @@ class FakeSimServer:
 
     def __init__(self, folder, block_event=None):
         self.folder = folder
+        self.start_step = 0  # [story-weaver:start-step] 模擬 SimulateServer.start_step
         self.game = SimpleNamespace(
             agents={n: FakeAgent(n) for n in AGENTS},
             conversation={},

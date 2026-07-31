@@ -4,8 +4,6 @@ import time
 import re
 import logging
 import requests
-from magentic import prompt
-
 from .text_normalize import normalize_llm_output
 
 timing_logger = logging.getLogger("llm_timing")
@@ -88,25 +86,84 @@ class LLMModel:
 
 class OpenAILLMModel(LLMModel):
     def setup(self, config):
-        from magentic import OpenaiChatModel
+        from openai import OpenAI
 
-        handle = OpenaiChatModel(self._model, api_key=self._api_key, base_url=self._base_url)
-        # openai client 預設 timeout=600s：DeepSeek hang 起上嚟單一 call 可以鎖死成個
-        # thread 10 分鐘（並行 think 下成步等齊先完）。改短 timeout 交返畀我哋自己嘅
-        # retry loop 處理；max_retries=0 避免同外層 retry 相乘。
+        client = OpenAI(api_key=self._api_key, base_url=self._base_url)
         timeout = config.get("timeout", 120)
-        handle._client = handle._client.with_options(timeout=timeout, max_retries=0)
-        handle._async_client = handle._async_client.with_options(timeout=timeout, max_retries=0)
-        return handle
+        client = client.with_options(timeout=timeout, max_retries=0)
+        return client
 
     def _completion(self, _prompt, return_type, temperature=0.5):
-        @prompt(
-            "{_prompt}",
-            model=self._handle
-        )
-        def response(_prompt: str) -> return_type: ...
-        output = response(_prompt).res
-        return output
+        import json
+
+        messages = [{"role": "user", "content": _prompt}]
+        kwargs = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+
+        # [story-weaver:native-fc] 用 OpenAI native function calling 取代 magentic，
+        # 解決 DeepSeek return malformed JSON（Python tuple）令 magentic parse 失敗嘅問題
+        if return_type is not None:
+            try:
+                schema = return_type.model_json_schema()
+                kwargs["tools"] = [{
+                    "type": "function",
+                    "function": {
+                        "name": return_type.__name__,
+                        "description": f"Return structured output as {return_type.__name__}",
+                        "parameters": schema,
+                    }
+                }]
+                kwargs["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": return_type.__name__}
+                }
+            except Exception:
+                pass
+
+        response = self._handle.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+        message = choice.message
+
+        # 優先拎 function call 嘅 structured output
+        if message.tool_calls and len(message.tool_calls) > 0:
+            raw_args = message.tool_calls[0].function.arguments
+            try:
+                parsed = json.loads(raw_args)
+                validated = return_type.model_validate(parsed)
+                return validated.res
+            except (json.JSONDecodeError, Exception):
+                # JSON parse 失敗 → 試 regex extract
+                json_match = re.search(r'\{.*\}', raw_args, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group())
+                        validated = return_type.model_validate(parsed)
+                        return validated.res
+                    except Exception:
+                        pass
+                raise
+
+        # Fallback: 冇 tool call → 試 text content
+        ret = message.content or ""
+        ret = re.sub(r"<think>.*</think>", "", ret, flags=re.DOTALL)
+        if return_type is not None and ret:
+            try:
+                parsed = json.loads(ret)
+                validated = return_type.model_validate(parsed)
+                return validated.res
+            except json.JSONDecodeError:
+                json_match = re.search(r'\{.*\}', ret, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group())
+                        validated = return_type.model_validate(parsed)
+                        return validated.res
+                    except Exception:
+                        pass
+        return ret or ""
 
 
 class OllamaLLMModel(LLMModel):

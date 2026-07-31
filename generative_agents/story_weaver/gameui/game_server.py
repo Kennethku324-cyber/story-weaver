@@ -182,6 +182,51 @@ def create_app() -> Flask:
         logger.info("game_server: 故事「%s」已刪除", name)
         return jsonify({"ok": True})
 
+    @app.post("/api/story/reset")
+    def api_story_reset():
+        """重玩故事：清空推演進度，保留角色設定同故事開端。"""
+        import glob as _glob
+
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name or "/" in name or ".." in name:
+            return jsonify({"error": "故事名唔啱"}), 400
+        folder = os.path.join(_checkpoints_root(), name)
+        if not os.path.isdir(folder):
+            return jsonify({"error": f"搵唔到故事「{name}」"}), 404
+
+        # 推演中唔准重設
+        with _runners_lock:
+            runner = _runners.get(name)
+        if runner is not None:
+            try:
+                if runner.store.load().status == UIStatus.SIMULATING:
+                    return jsonify({"error": "推演進行中，等佢停先好重玩"}), 409
+            except Exception:
+                pass
+
+        # 刪除推演進度檔（保留 story.json 同 sim_config.json）
+        for pattern in ["simulate-*.json", "conversation.json",
+                        "gm_state.json", "gm_state.json.tmp",
+                        "game_ui_state.json", "game_ui_state.json.tmp",
+                        "story_recap.json", "story_recap.json.tmp"]:
+            for f in _glob.glob(os.path.join(folder, pattern)):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+        # 成個 storage dir 剷走（llama_index vector index，會自動重建）
+        storage_dir = os.path.join(folder, "storage")
+        if os.path.isdir(storage_dir):
+            import shutil as _shutil
+            _shutil.rmtree(storage_dir, ignore_errors=True)
+
+        # 移除 runner（下次訪問會重新 init）
+        with _runners_lock:
+            _runners.pop(name, None)
+        logger.info("game_server: 故事「%s」已重設", name)
+        return jsonify({"ok": True})
+
     # ---------------------------------------------------------------- LLM 設定
 
     @app.get("/settings")
@@ -249,6 +294,43 @@ def create_app() -> Flask:
                 start_datetime = _dt.datetime.strptime(start_raw, "%Y%m%d-%H:%M").isoformat()
         except Exception:
             pass
+        # [story-weaver:char-profiles] 讀取角色簡介（年齡、性格、背景、關係）
+        persona_profiles: dict = {}
+        persona_relations: dict = {}
+        for agent in state.agents:
+            under = agent.replace(" ", "_")
+            config_path = ((sim_config.get("agents") or {}).get(agent) or {}).get(
+                "config_path", os.path.join("assets", "village", "agents", under, "agent.json")
+            )
+            try:
+                with open(os.path.join(runner.static_root, config_path), "r", encoding="utf-8") as f:
+                    agent_cfg = json.load(f)
+                scratch = agent_cfg.get("scratch", {})
+                profile_parts = []
+                age = scratch.get("age", "")
+                if age:
+                    profile_parts.append(f"{age}歲")
+                innate = scratch.get("innate", "")
+                if innate:
+                    profile_parts.append(innate)
+                learned = scratch.get("learned", "")
+                if learned:
+                    profile_parts.append(learned)
+                persona_profiles[under] = "；".join(profile_parts) if profile_parts else ""
+                # 角色關係（AgentA 對其他人嘅關係描述）
+                rels = agent_cfg.get("relationships", {})
+                if rels:
+                    rel_lines = []
+                    for other, rel in rels.items():
+                        if isinstance(rel, dict):
+                            desc = rel.get("desc", "")
+                            score = rel.get("score", 0)
+                            if desc and desc != "陌生人":
+                                rel_lines.append(f"{other}：{desc}（{score:+d}）")
+                    persona_relations[under] = rel_lines
+            except Exception:
+                persona_profiles[under] = ""
+
         return render_template(
             "game.html",
             session=name,
@@ -256,6 +338,8 @@ def create_app() -> Flask:
             persona_display={a.replace(" ", "_"): a for a in state.agents},
             persona_init_pos=persona_init_pos,
             persona_textures=persona_textures,
+            persona_profiles=persona_profiles,  # [story-weaver:char-profiles]
+            persona_relations=persona_relations,  # [story-weaver:char-profiles]
             agents_real=state.agents,
             sec_per_step=stride,
             start_datetime=start_datetime,
@@ -282,6 +366,15 @@ def create_app() -> Flask:
         feed_before = runner.frames.feed_latest
         runner.poll_scan()
         new_feed_items = runner.frames.feed_since(since_feed)
+        new_frames = runner.frames.frames_since(since_frame)
+        if new_frames:
+            keys = sorted(new_frames.keys(), key=lambda k: int(k) if k.isdigit() else 0)
+            logger.info(
+                "game_server: poll state=%s — %d new frames (keys %s..%s), %d new feed",
+                state.status.value, len(new_frames),
+                keys[0] if keys else "-", keys[-1] if keys else "-",
+                len(new_feed_items),
+            )
         if state.status == UIStatus.SIMULATING:
             runner.maybe_narrate(runner.frames.feed_since(feed_before))
 
@@ -307,6 +400,20 @@ def create_app() -> Flask:
             if f is not None:
                 finale = json.loads(f.model_dump_json())
 
+        # [story-weaver:story-banner] 持久顯示故事狀態（場景目標 + 壓力 + 上回摘要）
+        story_state = {}
+        try:
+            gm_data = runner._get_gm().state.data
+            story_state["scene_goal"] = gm_data.get("next_scene_goal", "") or ""
+            story_state["pressure"] = int(gm_data.get("dramatic_pressure", 1))
+            # 上回摘要（story_timeline 最尾非 round-0 entry）
+            timeline = runner._get_gm().state.build_story_timeline()
+            if len(timeline) > 1:
+                last_entry = timeline[-1]
+                story_state["last_summary"] = last_entry.summary or ""
+        except Exception:
+            story_state = {}
+
         return jsonify({
             "status": state.status.value,
             "round": state.round,
@@ -324,6 +431,7 @@ def create_app() -> Flask:
             "agents": state.agents,
             "readonly": readonly,
             "finale": finale,
+            "story_state": story_state,  # [story-weaver:story-banner]
             "error": state.error,
         })
 
@@ -333,14 +441,16 @@ def create_app() -> Flask:
     def api_round_start():
         data = request.get_json(silent=True) or {}
         name = data.get("name", "")
-        # [story-weaver:deploy] rate limit：每個 story 每 60 秒最多 6 次推演
-        if _rate_limit(f"round_start:{name}", max_req=6, window=60):
-            return jsonify({"accepted": False, "reason": "推演太頻密，請等一陣再試"}), 429
         runner = get_runner(name)
         if runner is None:
             return jsonify({"error": "session 唔存在"}), 404
         if _is_readonly(runner.store.load(), data.get("client_id", "")):
             return jsonify({"error": "唯讀模式"}), 403
+        # [story-weaver:rate-limit] 防止小朋友狂撳：1 秒 cooldown + 60 秒 5 次上限
+        if _rate_limit(f"round_cooldown:{name}", max_req=1, window=1):
+            return jsonify({"accepted": False, "reason": "撳得太快，等一秒再試"}), 429
+        if _rate_limit(f"round_start:{name}", max_req=5, window=60):
+            return jsonify({"accepted": False, "reason": "推演太頻密，請等一陣再試"}), 429
         try:
             round_no = runner.start_round()
         except RoundBusyError as e:
@@ -354,6 +464,9 @@ def create_app() -> Flask:
     def api_decision():
         data = request.get_json(silent=True) or {}
         name = data.get("name", "")
+        # [story-weaver:rate-limit] 防 double-click：1 秒 cooldown
+        if _rate_limit(f"decision_cooldown:{name}", max_req=1, window=1):
+            return jsonify({"accepted": False, "message": "撳得太快，等一秒再試"}), 429
         runner = get_runner(name)
         if runner is None:
             return jsonify({"error": "session 唔存在"}), 404
@@ -410,6 +523,7 @@ def create_app() -> Flask:
     @app.get("/api/export/story")
     def api_export_story():
         from flask import Response
+        import re as _re
 
         name = request.args.get("name", "")
         fmt = request.args.get("format", "md")
@@ -424,11 +538,24 @@ def create_app() -> Flask:
                 mimetype="application/json; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="{name}-story.json"'},
             )
+        # 內容：優先 recap，fallback timeline
         recap = runner._get_recap()
         md = recap.export_markdown(name) if recap is not None else None
         if md is None:
             timeline = runner._get_gm().state.build_story_timeline()
             md = "\n\n".join(f"## 第 {t.round} 回合\n\n{t.summary}" for t in timeline)
+        if fmt == "txt":
+            # 剝走 markdown 格式 → 純文字
+            txt = _re.sub(r"^#{1,6}\s+", "", md, flags=_re.MULTILINE)  # headings
+            txt = _re.sub(r"\*\*(.+?)\*\*", r"\1", txt)                 # bold
+            txt = _re.sub(r"\*(.+?)\*", r"\1", txt)                     # italic
+            txt = _re.sub(r"\[(.+?)\]\(.+?\)", r"\1", txt)              # links
+            txt = _re.sub(r"^[-*]\s+", "· ", txt, flags=_re.MULTILINE)  # bullets
+            return Response(
+                txt,
+                mimetype="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{name}-故事.txt"'},
+            )
         return Response(
             md,
             mimetype="text/markdown; charset=utf-8",

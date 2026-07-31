@@ -55,8 +55,12 @@ class SimulateServer:
         # 载入历史对话数据（用于断点恢复）
         self.conversation_log = f"{checkpoints_folder}/conversation.json"
         if os.path.exists(self.conversation_log):
-            with open(self.conversation_log, "r", encoding="utf-8") as f:
-                conversation = json.load(f)
+            try:
+                with open(self.conversation_log, "r", encoding="utf-8") as f:
+                    conversation = json.load(f)
+            except Exception:
+                print(f"WARNING: conversation.json 損毀（{checkpoints_folder}），以空對話開始")
+                conversation = {}
         else:
             conversation = {}
 
@@ -97,6 +101,47 @@ class SimulateServer:
         # [story-weaver:affinity] GM 回合尾掛鉤（由 GM 系統注入）；預設 6 step 一回合
         self.gm_hook = None  # [story-weaver:affinity]
         self.steps_per_round = max(1, config.get("steps_per_round", 6))  # [story-weaver:affinity]
+
+    def set_agent_destination(self, name: str, destination: list) -> bool:
+        """[story-weaver:gm-walk] 設定 agent 要行去嘅目的地（唔 teleport）。
+        會用 maze pathfinding 搵路徑，等 simulate() 時 agent 真係行過去。
+        返 True 如果成功 set 咗路徑。"""
+        agent = self.game.agents.get(name)
+        if agent is None or name not in self.agent_status:
+            return False
+        current = list(agent.coord) if agent.coord else self.agent_status[name]["coord"]
+        path = self.game.maze.find_path(current, destination)
+        if path and len(path) > 1:
+            self.agent_status[name]["coord"] = list(destination)
+            self.agent_status[name]["path"] = path[1:]  # 唔包 starting position
+            if name in self.config.get("agents", {}):
+                self.config["agents"][name]["coord"] = list(destination)
+            self.logger.info(
+                "gm-walk: %s 行去 [%s,%s] — %d steps, from [%s,%s]",
+                name, destination[0], destination[1], len(path),
+                current[0], current[1],
+            )
+            return True
+        # 冇路徑（可能同一位置）→ fallback
+        self.agent_status[name]["coord"] = list(destination)
+        self.agent_status[name]["path"] = []
+        if name in self.config.get("agents", {}):
+            self.config["agents"][name]["coord"] = list(destination)
+        self.logger.info(
+            "gm-walk: %s → [%s,%s] (no path, %d steps)",
+            name, destination[0], destination[1], len(path) if path else 0,
+        )
+        return False
+
+    def sync_agent_positions(self) -> None:
+        """[story-weaver:gm-move] 將 game agents 嘅當前位置同步到 agent_status，
+        GM teleport 之後 call 呢個，確保 simulate() 用新位置而唔係 config 預設。"""
+        for name, agent in self.game.agents.items():
+            if name in self.agent_status:
+                self.agent_status[name]["coord"] = list(agent.coord)
+                self.agent_status[name]["path"] = []
+                if name in self.config.get("agents", {}):
+                    self.config["agents"][name]["coord"] = list(agent.coord)
 
     def simulate(self, step, stride=0):
         timer = utils.get_timer()

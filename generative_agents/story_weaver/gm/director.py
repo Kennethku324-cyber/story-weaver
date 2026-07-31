@@ -193,7 +193,7 @@ class GMDirector:
     # ---------------------------------------------------------------- 回合生命週期
 
     def on_round_start(self, server) -> None:
-        """拍增量基線快照 + 注入好感度 currently 前綴 + 主題錨定。"""
+        """拍增量基線快照 + 注入好感度 currently 前綴 + 主題錨定 + 場景指導落地。"""
         try:
             baseline = self._collector.snapshot(server)
             self.state.set_round_baseline(baseline)
@@ -210,24 +210,253 @@ class GMDirector:
         except Exception as e:
             logger.warning("gm: 好感度前綴注入失敗", exc_info=True)
             self._log_error(0, "round_start_prefix", e)
-        # [story-weaver:theme-anchor] 每回合開始將故事主題重新錨定入 agent 當前意識，
-        # 確保推演內容跟隨故事開端，唔會漂移成日常流水賬
+
+        # [story-weaver:scene-direction] 讀取上回合 GM 規劃嘅場景指導
+        scene_goal = (self.state.data.get("next_scene_goal") or "").strip()
+        forced_meetings = self.state.data.get("next_forced_meetings") or []
+        pressure = int(self.state.data.get("dramatic_pressure", 1))
+
+        # 壓力驅動：高壓時冇人為規劃就自動配對
+        if pressure >= 3 and not forced_meetings:
+            try:
+                forced_meetings = self._pick_conflict_pair(server)
+                if forced_meetings:
+                    logger.info(
+                        "gm: 壓力 %d 自動配對 → %s", pressure, forced_meetings
+                    )
+            except Exception:
+                pass
+
+        # [story-weaver:day-boundary] 偵測跨日：agent schedule 會被 regenerate，
+        # 必須更 aggressive 咁 re-anchor 場景指導同故事主題
+        try:
+            current_date = str(server.config.get("time", ""))[:8]  # YYYYMMDD
+            last_date = (self.state.data.get("last_round_date") or "")[:8]
+            is_new_day = current_date and last_date and current_date != last_date
+        except Exception:
+            is_new_day = False
+
+        # 落地場景指導（theme anchor + scene enforcement + agent goals 三合一）
         try:
             story_seed = (self.state.data.get("story_seed") or "").strip()
-            if story_seed:
-                for name, agent in server.game.agents.items():
+            agent_goals = self.state.data.get("agent_goals") or {}
+            agents = server.game.agents
+            for name, agent in agents.items():
+                try:
+                    current = agent.scratch.currently
+                    # 故事主題
+                    if story_seed and story_seed[:20] not in current:
+                        current = f"【故事主題】{story_seed}。{current}"
+                    # 場景指導
+                    if scene_goal and scene_goal[:20] not in current:
+                        current = f"【本回合】{scene_goal}。{current}"
+                    # 跨日 re-anchor：更 aggressive wording
+                    if is_new_day:
+                        current = (
+                            f"【命運延續】新的一天開始，但故事仍在繼續——"
+                            f"{scene_goal or story_seed}。{current}"
+                        )
+                    # [story-weaver:persistent-goals] 每回合 re-inject agent goal
+                    goal = agent_goals.get(name, "")
+                    if goal and goal[:20] not in current:
+                        current = f"【個人目標】{goal}。{current}"
+                    agent.scratch.currently = current
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning("gm: 主題/場景錨定失敗", exc_info=True)
+            self._log_error(0, "theme_anchor", e)
+
+        # [story-weaver:pre-move] 由 gm_state 恢復 between-rounds 嘅 pre-move 位置，
+        # 等 FrameBuffer 可以生成行路動畫
+        saved_pre = self.state.data.get("_pre_move_positions")
+        if saved_pre:
+            server.config["_pre_move_positions"] = saved_pre
+            self.state.data.pop("_pre_move_positions", None)
+            self.state.save()
+
+        # 落地 forced meetings：teleport pairs 到同一地點
+        if forced_meetings:
+            try:
+                self._apply_scene_direction(server, scene_goal, forced_meetings)
+            except Exception as e:
+                logger.warning("gm: 場景指導落地失敗", exc_info=True)
+                self._log_error(0, "scene_direction_apply", e)
+
+        # 清走已使用嘅場景指導，下一回合由新 analysis 覆蓋
+        self.state.data["next_scene_goal"] = ""
+        self.state.data["next_forced_meetings"] = []
+        self.state.save()
+
+    # ---------------------------------------------------------------- 場景指導 helpers
+
+    def _apply_scene_direction(
+        self, server, scene_goal: str, forced_meetings: list[list[str]]
+    ) -> None:
+        """[story-weaver:scene-direction] 將場景指導落地：強制角色見面。
+        對每對 forced_meetings，將兩個 agent 移去同一地點，改寫 schedule + currently。"""
+        agents = server.game.agents
+        meeting_coords = self._find_meeting_locations(forced_meetings, agents)
+
+        # [story-weaver:pre-move] 記錄 teleport 前嘅位置，俾 FrameBuffer 可以生成行路動畫
+        pre_move_positions = {}
+        for pair in forced_meetings:
+            for name in pair:
+                if name not in pre_move_positions and name in agents:
+                    pre_move_positions[name] = list(agents[name].coord)
+
+        for pair in forced_meetings:
+            if len(pair) < 2:
+                continue
+            name_a, name_b = pair[0], pair[1]
+            agent_a = agents.get(name_a)
+            agent_b = agents.get(name_b)
+            if agent_a is None or agent_b is None:
+                continue
+
+            coord = meeting_coords.get(tuple(sorted([name_a, name_b])))
+            if coord is None:
+                continue
+
+            try:
+                agent_a.move(list(coord))
+                agent_b.move(list(coord))
+                logger.info("gm: 場景指導 — %s ↔ %s 強制見面 @ %s", name_a, name_b, coord)
+
+                # [story-weaver:chat-steer] 注入「思想」concept — 確保見面之後嘅對話
+                # 圍繞場景主題而唔係日常傾閒偈
+                chat_topic = scene_goal or f"{name_a} 同 {name_b} 必須見面交談"
+                for agent, other_name in [(agent_a, name_b), (agent_b, name_a)]:
+                    if not agent.is_awake():
+                        continue
                     try:
-                        current = agent.scratch.currently
-                        # 避免重複疊加（已含主題就唔再加）
-                        if story_seed[:20] not in current:
+                        from modules import memory as mem_module
+                        thought_event = mem_module.Event(
+                            agent.name,
+                            "思考",
+                            f"即將與{other_name}見面",
+                            describe=(
+                                f"{agent.name} 反覆思考：即將同 {other_name} 見面——"
+                                f"{chat_topic}。呢次見面好重要，必須認真對待。"
+                            ),
+                            address=agent.get_tile().get_address(),
+                        )
+                        agent._add_concept("thought", thought_event, poignancy_override=12)
+                    except Exception:
+                        pass
+
+                # 改寫 currently
+                for agent, other_name in [(agent_a, name_b), (agent_b, name_a)]:
+                    try:
+                        if scene_goal and scene_goal[:20] not in (agent.scratch.currently or ""):
                             agent.scratch.currently = (
-                                f"【故事主題】{story_seed}。{current}"
+                                f"【命運相遇】你即將見到 {other_name}。{scene_goal}。"
+                                f"{agent.scratch.currently}"
                             )
                     except Exception:
                         pass
-        except Exception as e:
-            logger.warning("gm: 主題錨定失敗", exc_info=True)
-            self._log_error(0, "theme_anchor", e)
+
+                # 改寫 schedule（強制中斷當前 routine + overwrite plan block）
+                for agent in [agent_a, agent_b]:
+                    if not agent.is_awake():
+                        continue
+                    try:
+                        from modules import memory as mem_module, utils
+
+                        meet_desc = f"{agent.name} 去見另一個人——呢個見面將會改變一切。"
+                        meet_event = mem_module.Event(
+                            agent.name,
+                            "被命運引導",
+                            "命運的提示",
+                            describe=meet_desc,
+                            address=agent.get_tile().get_address(),
+                        )
+                        plan, de_plan = agent.schedule.current_plan()
+                        start = utils.get_timer().daily_time(de_plan["start"])
+                        duration = de_plan["duration"]
+                        agent.revise_schedule(meet_event, start, duration)
+                        # [story-weaver:plan-overwrite] 直接改寫 plan block describe，
+                        # 令 agent 嘅成個日程單元都指向戲劇行動，唔係日常 routine
+                        try:
+                            plan["describe"] = meet_desc
+                        except Exception:
+                            pass
+                    except Exception:
+                        logger.warning(
+                            "gm: %s schedule revise 失敗（場景指導）", agent.name, exc_info=True
+                        )
+            except Exception:
+                logger.warning(
+                    "gm: 場景指導落地失敗 pair=%s/%s", name_a, name_b, exc_info=True
+                )
+
+        if hasattr(server, "sync_agent_positions"):
+            server.sync_agent_positions()
+        # [story-weaver:pre-move] 儲存 teleport 前位置（server.config → checkpoint；
+        # gm_state → survive server rebuild）
+        if pre_move_positions:
+            server.config["_pre_move_positions"] = pre_move_positions
+            self.state.data["_pre_move_positions"] = pre_move_positions
+            self.state.save()
+
+    def _find_meeting_locations(
+        self, pairs: list[list[str]], agents: dict
+    ) -> dict[tuple, list]:
+        """為每對角色搵一個共同見面地點（優先揀是但一方嘅當前位置）。"""
+        coords: dict[tuple, list] = {}
+        for pair in pairs:
+            if len(pair) < 2:
+                continue
+            key = tuple(sorted([pair[0], pair[1]]))
+            if key in coords:
+                continue
+            a = agents.get(pair[0])
+            b = agents.get(pair[1])
+            coord = None
+            if a is not None and a.is_awake():
+                coord = list(a.coord) if a.coord else None
+            if coord is None and b is not None and b.is_awake():
+                coord = list(b.coord) if b.coord else None
+            if coord is None:
+                coord = [94, 21]  # fallback：小鎮中心
+            coords[key] = coord
+        return coords
+
+    def _pick_conflict_pair(self, server) -> list[list[str]]:
+        """[story-weaver:scene-direction] 由 affinity matrix 揀最極端值嘅 pair。
+        優先揀最憎（最低值），其次最愛（最高值），冇極端值就 random 兩個。"""
+        agents = server.game.agents
+        names = list(agents.keys())
+        if len(names) < 2:
+            return []
+
+        # 讀 affinity matrix
+        pairs: list[tuple[str, str, int]] = []  # [(from, to, value), ...]
+        try:
+            config = getattr(server, "config", {}) or {}
+            affinity = config.get("affinity", {})
+            for from_name, targets in affinity.items():
+                if not isinstance(targets, dict):
+                    continue
+                for to_name, info in targets.items():
+                    if not isinstance(info, dict):
+                        continue
+                    value = info.get("value", 0)
+                    if from_name != to_name and from_name in names and to_name in names:
+                        pairs.append((from_name, to_name, value))
+        except Exception:
+            pass
+
+        if not pairs:
+            # 冇 affinity data：random 兩個
+            import random
+            chosen = random.sample(names, 2)
+            return [[chosen[0], chosen[1]]]
+
+        # 揀最極端（abs 最大）
+        pairs.sort(key=lambda x: abs(x[2]), reverse=True)
+        best = pairs[0]
+        return [[best[0], best[1]]]
 
     def on_round_end(self, server, round_no: int) -> GMDecision:
         """採增量 → 靜默判斷 → LLM 分析 → 持久化 pending → 回傳 GMDecision。"""
@@ -258,6 +487,10 @@ class GMDirector:
                 recent_history = _build_recent_history(
                     self.state.build_story_timeline(), max_entries=3
                 )
+                # [story-weaver:scene-direction] 附加上回玩家選擇，令 GM 有連貫意識
+                last_choice = (self.state.data.get("last_player_choice") or "").strip()
+                if last_choice:
+                    recent_history += f"\n【上回玩家決定】{last_choice}\n（你必須承接呢個決定去規劃今回合同下回合嘅劇情。）"
                 # [story-weaver:inner-world] 收集 agent 內心狀態（currently + 當前動作）
                 agent_inner = _format_agent_inner(server, self.agent_names)
                 analysis = self._prompter.round_analysis(
@@ -291,7 +524,60 @@ class GMDirector:
             self.state.data["choice_applied"] = False
             self.state.save()
 
+        # [story-weaver:scene-direction] 儲存 GM 規劃嘅下回合場景指導
+        if analysis is not None:
+            if analysis.next_scene_goal:
+                self.state.data["next_scene_goal"] = analysis.next_scene_goal
+            if analysis.next_forced_meetings:
+                self.state.data["next_forced_meetings"] = analysis.next_forced_meetings
+            self.state.save()
+
+        # [story-weaver:day-boundary] 記錄今回合 game date，俾下回合 detect 跨日
+        try:
+            self.state.data["last_round_date"] = str(server.config.get("time", ""))[:8]
+        except Exception:
+            pass
+
+        # [story-weaver:persistent-goals] 由場景指導自動 populate agent goals
+        # 每個 forced_meeting pair 入面嘅角色都會得到對應嘅 goal
+        try:
+            agent_goals = self.state.data.setdefault("agent_goals", {})
+            scene = (self.state.data.get("next_scene_goal") or "").strip()
+            meetings = self.state.data.get("next_forced_meetings") or []
+            for pair in meetings:
+                if len(pair) < 2:
+                    continue
+                for name in pair:
+                    if name in self.agent_names:
+                        other = pair[1] if pair[0] == name else pair[0]
+                        goal = scene or f"與 {other} 見面交談"
+                        agent_goals[name] = goal
+            # 檢查已完成嘅 goals：如果 agent 之間已經傾過偈（對話出現喺 delta），
+            # 而且內容似乎對應到 goal，可以考慮清除——但留俾 GM prompt 判斷
+            self.state.save()
+        except Exception:
+            pass
+
         # 3. 砌決策 + 半成品 timeline entry（player_choice 留空，apply 時補完）
+
+        # [story-weaver:affinity-threshold] 好感度極端值觸發壓力
+        try:
+            affinity_data = store.to_dict()
+            for from_agent, targets in affinity_data.items():
+                for to_agent, info in targets.items():
+                    if not isinstance(info, dict):
+                        continue
+                    value = info.get("value", 0)
+                    if value >= 80:
+                        self.state.add_unresolved_thread(
+                            f"{from_agent} 對 {to_agent} 嘅感情達到頂點（{value}），需要一個交代"
+                        )
+                    elif value <= -80:
+                        self.state.add_unresolved_thread(
+                            f"{from_agent} 同 {to_agent} 嘅關係瀕臨破裂（{value}），衝突一觸即發"
+                        )
+        except Exception:
+            pass  # affinity check 失敗唔影響主流程
         options = analysis.options if analysis else []
         suggestions = analysis.suggested_affinity_changes if analysis else []
         branch_point = analysis.branch_point if analysis else None
@@ -369,6 +655,8 @@ class GMDirector:
         if choice.type in ("option", "option+custom") and choice.option_id:
             try:
                 self._force_agent_meeting(server, agents, choice, round_no)
+                if hasattr(server, "sync_agent_positions"):
+                    server.sync_agent_positions()
             except Exception:
                 logger.warning("gm: 強制見面失敗", exc_info=True)
 
@@ -438,9 +726,22 @@ class GMDirector:
             "finish": "故事即將進入終章。",
         }
         # [story-weaver:no-quiet] 標記玩家已做選擇，下回合唔會俾靜默判定吞咗
+        # [story-weaver:scene-direction] 記錄玩家選擇俾下回合 GM 參考
         if choice.type not in ("skip",):
             self.state.resolve_unresolved_thread()
             self.state.data["choice_applied"] = True
+            # 記錄玩家意圖，令下回合 GM prompt 可以引用
+            choice_text = choice.text or ""
+            if not choice_text and choice.option_id:
+                # 由 injected record 攞內容
+                if records:
+                    choice_text = records[0].content
+            if choice_text:
+                self.state.data["last_player_choice"] = choice_text
+            self.state.save()
+        else:
+            # 玩家 skip：張力累積
+            self.state.add_unresolved_thread("玩家選擇唔幹預——小鎮嘅命運懸而未決")
             self.state.save()
         return InjectionReport(
             ok=True,
@@ -475,7 +776,8 @@ class GMDirector:
                 # [story-weaver:scratch-inject] 更新當前意識 → 後續 LLM 決策跟隨玩家選擇
                 try:
                     agent.scratch.currently = (
-                        f"【命運轉折】{describe}。因此，{agent.scratch.currently}"
+                        f"【命運轉折】{describe}。呢件事徹底改變咗你今日嘅計劃——"
+                        f"你必須優先處理呢件事，其他一切都可以等。因此，{agent.scratch.currently}"
                     )
                 except Exception:
                     pass
@@ -489,10 +791,16 @@ class GMDirector:
                             describe=describe,
                             address=agent.get_tile().get_address(),
                         )
-                        _plan, de_plan = agent.schedule.current_plan()
+                        plan, de_plan = agent.schedule.current_plan()
                         start = utils.get_timer().daily_time(de_plan["start"])
                         duration = de_plan["duration"]
                         agent.revise_schedule(event_obj, start, duration)
+                        # [story-weaver:plan-overwrite] 直接改寫 plan block describe，
+                        # 等於玩家嘅導演決定成為 agent 日程嘅正式項目
+                        try:
+                            plan["describe"] = describe
+                        except Exception:
+                            pass
                     except Exception:
                         logger.warning(
                             "gm: %s schedule revise 失敗", agent.name, exc_info=True
@@ -527,7 +835,8 @@ class GMDirector:
                 # [story-weaver:scratch-inject] 更新當前意識 → 後續 LLM 決策跟隨玩家命令
                 try:
                     agents[name].scratch.currently = (
-                        f"【命運驅使】{parsed.command_event_describe}。因此，"
+                        f"【命運驅使】{parsed.command_event_describe}。"
+                        f"你無法抗拒——呢件事必須成為你當下最重要嘅行動。因此，"
                         f"{agents[name].scratch.currently}"
                     )
                 except Exception:
@@ -542,10 +851,15 @@ class GMDirector:
                             describe=parsed.command_event_describe,
                             address=agents[name].get_tile().get_address(),
                         )
-                        _plan, de_plan = agents[name].schedule.current_plan()
+                        plan, de_plan = agents[name].schedule.current_plan()
                         start = utils.get_timer().daily_time(de_plan["start"])
                         duration = de_plan["duration"]
                         agents[name].revise_schedule(event_obj, start, duration)
+                        # [story-weaver:plan-overwrite] 直接改寫 plan block describe
+                        try:
+                            plan["describe"] = parsed.command_event_describe
+                        except Exception:
+                            pass
                     except Exception:
                         logger.warning(
                             "gm: %s schedule revise 失敗", agents[name].name, exc_info=True
@@ -580,12 +894,25 @@ class GMDirector:
                 pass
         if meeting_coord is None:
             meeting_coord = [94, 21]
+        # [story-weaver:pre-move] 記錄原位 → FrameBuffer 可生成行路動畫
+        pre_move = {}
+        for name, agent in agents.items():
+            try:
+                pre_move[name] = list(agent.coord)
+            except Exception:
+                pass
         # 移所有 agent 到共同地點
         for agent in agents.values():
             try:
                 agent.move(meeting_coord[:])
             except Exception:
                 pass
+        if pre_move:
+            server.config["_pre_move_positions"] = pre_move
+            # [story-weaver:pre-move] 同時 save 去 gm_state，因為 server rebuild 時會
+            # 清走 config，但 gm_state 會保留到下回合
+            self.state.data["_pre_move_positions"] = pre_move
+            self.state.save()
         logger.info("gm: 強制見面 — %d agents", len(agents))
 
     def parse_custom_command(self, text: str) -> CustomCommandParse:
@@ -613,12 +940,15 @@ class GMDirector:
                 feasible=False,
                 refuse_reason="命運之線暫時模糊，未能解讀你的命令，請稍後再試。",
             )
-        # 後置校驗一：targets 過濾到角色名單（LLM 幻覺嘅名直接丟棄）
+        # 後置校驗一：targets 過濾到角色名單（LLM 幻覺嘅名丟棄，
+        # 冇 valid target 就 fallback 全部角色，唔好因為 LLM 認錯名就 reject）
         known = [t for t in parsed.targets if t in self.agent_names]
-        if parsed.targets and not known and parsed.feasible:
-            parsed.feasible = False
-            parsed.refuse_reason = "命令涉及的角色不在小鎮之中。"
-        parsed.targets = known
+        if parsed.targets and not known:
+            # LLM 幻覺咗全部 target 名 → 清空 targets，apply to all
+            logger.warning(
+                "gm: 命令解析 targets 全幻覺（%s），fallback 全部角色", parsed.targets
+            )
+        parsed.targets = known if known else []  # 空 = apply to all
         # 後置校驗二：describe 過禁詞檢查
         if parsed.feasible:
             try:

@@ -91,6 +91,13 @@ class FrameBuffer:
         except OSError:
             return {"new_frames": {}, "new_feed": [], "last_step": self._last_step, "skipped": []}
 
+        new_count = sum(1 for f in files if f not in self._files_processed)
+        if new_count > 0:
+            logger.info(
+                "framebuffer: scan — %d total files, %d new, _cumulative_step=%d",
+                len(files), new_count, self._cumulative_step
+            )
+
         conversation = self._load_conversation()
         new_frames: dict[str, dict] = {}
         new_feed: list[FeedItem] = []
@@ -236,14 +243,18 @@ class FrameBuffer:
 
             last = self._last_location.get(agent_name)
             if last is None:
-                # 首次見到呢個 agent：以當前 coord 做起點（resume 情境）或第 0 帧
-                last = {"movement": list(coord) if coord else [0, 0], "location": location or ""}
+                # [story-weaver:pre-move] GM teleport 前位置 → frame 0 用原位，
+                # 令 FrameBuffer 可以生成由原位行去見面地點嘅動畫
+                pre_move = (data.get("_pre_move_positions") or {}).get(agent_name)
+                start_pos = pre_move if pre_move else (list(coord) if coord else [0, 0])
+                last = {"movement": start_pos, "location": location or ""}
                 self._last_location[agent_name] = last
                 if cstep == 1:
-                    # 第 0 帧初始位置（同 compress.py insert_frame0）
                     new_frames.setdefault("0", {})[agent_name] = {
                         "location": location or "",
-                        "movement": list(coord) if coord else [0, 0],
+                        "movement": list(start_pos),
+                        "action": "前往見面地點…" if pre_move else "",
+                        "currently": "",
                     }
 
             source_coord = last["movement"]
@@ -274,7 +285,7 @@ class FrameBuffer:
             is_wandering = False
             if path_len <= 1:
                 # [story-weaver:wandering] 原地活動 → 生成室內踱步
-                wandering = self._build_wandering_path(source_coord, steps=8)
+                wandering = self._build_wandering_path(source_coord, steps=20)
                 if len(wandering) > 2:
                     path_points = wandering
                     path_len = len(path_points)
@@ -317,10 +328,14 @@ class FrameBuffer:
                         action = "💬 " + action
 
                 step_key = "%d" % ((cstep - 1) * FRAMES_PER_STEP + 1 + i)
+                # [story-weaver:currently-label] 將 currently（內心/戲劇狀態）
+                # 傳去 frontend，取代原本淨係 show 物理行動
+                currently = (agent_data.get("currently") or "").strip()
                 new_frames.setdefault(step_key, {})[agent_name] = {
                     "location": location,
                     "movement": movement,
                     "action": action,
+                    "currently": currently,
                 }
 
             # 更新最後已知位置（用 path 終點）

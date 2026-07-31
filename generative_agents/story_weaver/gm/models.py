@@ -52,13 +52,21 @@ class AffinitySuggestion(BaseModel):
 
 
 class GMRoundAnalysis(BaseModel):
-    """gm_round_summary.txt 的 structured output（一次 LLM call 完成摘要+分支+選項）。"""
+    """gm_round_summary.txt 的 structured output（一次 LLM call 完成摘要+分支+選項+下回合指導）。"""
 
     summary: str = Field(description="本回合摘要，3-5 句繁體中文敘事")
     branch_point: str = Field(description="本回合最重要的劇情分支點，一句話")
     options: list[GMOption] = Field(description="2-3 個分支選項", min_length=2, max_length=3)
     suggested_affinity_changes: list[AffinitySuggestion] = Field(
         default_factory=list, description="好感度建議變動，可為空列表"
+    )
+    # [story-weaver:scene-direction] GM 喺分析完呢回合後規劃下回合嘅戲劇 beat
+    next_scene_goal: str = Field(
+        default="", description="下回合最重要嘅戲劇 beat，一句話。空字串表示由系統自動決定"
+    )
+    next_forced_meetings: list[list[str]] = Field(
+        default_factory=list,
+        description="下回合必須見面嘅角色 pair，例如 [[\"伊莎貝拉\",\"克勞斯\"],[\"卡洛斯\",\"山本百合子\"]]。空列表表示由系統自動決定",
     )
 
 

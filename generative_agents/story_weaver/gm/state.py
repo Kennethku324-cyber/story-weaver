@@ -34,6 +34,10 @@ _DEFAULTS: dict = {
     "choice_applied": False,  # [story-weaver:no-quiet] 今回合係咪啱啱應用咗玩家選擇
     "dramatic_pressure": 1,
     "unresolved_threads": [],
+    # [story-weaver:persistent-goals] agent 級 persistent goal（導演 set goal → 每回合 re-inject 直到達成）
+    "agent_goals": {},  # {agent_name: goal_description}
+    # [story-weaver:day-boundary] 記錄上回合 game date，detect day change
+    "last_round_date": "",
 }
 
 
