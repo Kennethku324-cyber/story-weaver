@@ -484,6 +484,16 @@ def restore_story_agent_assets(static_root: str, checkpoints_root: str) -> list[
                 continue
             source = os.path.join(templates_root, str(template_map.get(name) or ""), "agent.json")
             if not os.path.isfile(source):
+                # Compatibility for stories created with a template that was
+                # later removed from the bundled gallery.
+                candidates = []
+                if os.path.isdir(templates_root):
+                    candidates = [
+                        os.path.join(templates_root, entry, "agent.json")
+                        for entry in sorted(os.listdir(templates_root))
+                    ]
+                source = next((path for path in candidates if os.path.isfile(path)), source)
+            if not os.path.isfile(source):
                 logger.warning("Missing template for story %s agent %s", story_name, name)
                 continue
             os.makedirs(os.path.dirname(target), exist_ok=True)
