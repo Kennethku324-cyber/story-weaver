@@ -24,6 +24,7 @@ RUN echo '#!/bin/bash\n\
 DEST="/app/generative_agents/results/checkpoints"\n\
 SRC="/app/story_templates"\n\
 mkdir -p "$DEST"\n\
+mkdir -p /app/generative_agents/results/.hf_cache\n\
 if [ -d "$SRC" ]; then\n\
   for d in "$SRC"/*/; do\n\
     name=$(basename "$d")\n\
