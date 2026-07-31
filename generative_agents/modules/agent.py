@@ -5,6 +5,7 @@ import math
 import random
 import datetime
 import threading
+import re
 
 from modules import memory, prompt, utils
 from modules.model.llm_model import create_llm_model
@@ -232,9 +233,19 @@ class Agent:
                     break
 
             def _to_duration(date_str):
-                return utils.daily_duration(utils.to_date(date_str, "%H:%M"))
+                # Some OpenAI-compatible models append labels such as
+                # "_extra" to schedule keys.  Keep the leading HH:MM rather
+                # than failing the whole simulation round.
+                match = re.match(r"^(?:[01]?\d|2[0-3]):[0-5]\d", str(date_str))
+                if not match:
+                    return None
+                return utils.daily_duration(utils.to_date(match.group(0), "%H:%M"))
 
-            schedule = {_to_duration(k): v for k, v in schedule.items()}
+            schedule = {
+                duration: task
+                for key, task in schedule.items()
+                if (duration := _to_duration(key)) is not None
+            }
             starts = list(sorted(schedule.keys()))
             for idx, start in enumerate(starts):
                 end = starts[idx + 1] if idx + 1 < len(starts) else 24 * 60
