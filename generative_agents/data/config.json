@@ -12,7 +12,7 @@
     "think": {
       "llm": {
         "provider": "openai",
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "base_url": "https://api.deepseek.com",
         "api_key": ""
       },
