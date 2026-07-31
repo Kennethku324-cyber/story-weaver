@@ -123,6 +123,11 @@ class OpenAILLMModel(LLMModel):
             except Exception:
                 pass
 
+        # DeepSeek V4 thinking mode rejects tool_choice. Structured calls need
+        # the function response, so explicitly select the non-thinking mode.
+        if self._model.startswith("deepseek-v4-") and return_type is not None:
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+
         response = self._handle.chat.completions.create(**kwargs)
         choice = response.choices[0]
         message = choice.message
