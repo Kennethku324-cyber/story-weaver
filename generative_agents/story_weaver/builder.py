@@ -77,7 +77,6 @@ class StoryBuilder:
             os.path.dirname(catalog.agents_root.rstrip("/")), "story_agents"
         )
         self._lock = threading.Lock()
-
     # ------------------------------------------------------------------
     # 校驗
     # ------------------------------------------------------------------
@@ -253,6 +252,11 @@ class StoryBuilder:
                     )
                 agent_json = self._render_agent_json(char, template, rel_map, req.story_opening, req.story_name)
                 self._write_json(os.path.join(agent_dir, "agent.json"), agent_json)
+                # Keep an exact copy on the checkpoint volume.  The static
+                # directory belongs to the container image and is replaced on
+                # every Fly deployment.
+                backup_dir = os.path.join(story_dir, "agent_assets", dir_name)
+                shutil.copytree(agent_dir, backup_dir)
 
             return BuildResult(
                 story_name=req.story_name,
@@ -440,3 +444,60 @@ class StoryBuilder:
 
     def estimated_llm_calls(self, req: SetupCreateRequest) -> int:
         return ESTIMATED_LLM_CALLS_PER_AGENT * len(req.characters)
+
+
+def restore_story_agent_assets(static_root: str, checkpoints_root: str) -> list[str]:
+    """Restore story agent files after a container is replaced.
+
+    The Fly volume keeps checkpoints but not Flask's static directory.  For
+    older stories without a backup, rebuild the missing agent file from its
+    selected template so an old story remains playable.
+    """
+    restored: list[str] = []
+    if not os.path.isdir(checkpoints_root):
+        return restored
+    templates_root = os.path.join(static_root, "assets", "village", "agents")
+    for story_name in os.listdir(checkpoints_root):
+        story_dir = os.path.join(checkpoints_root, story_name)
+        meta_path = os.path.join(story_dir, "story.json")
+        sim_path = os.path.join(story_dir, "sim_config.json")
+        if not os.path.isfile(meta_path) or not os.path.isfile(sim_path):
+            continue
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f)
+            with open(sim_path, encoding="utf-8") as f:
+                sim_config = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Unable to restore story assets for %s", story_name)
+            continue
+        template_map = meta.get("template_map") or {}
+        for name, agent_cfg in (sim_config.get("agents") or {}).items():
+            relative_path = agent_cfg.get("config_path", "")
+            target = os.path.join(static_root, relative_path)
+            if not relative_path or os.path.isfile(target):
+                continue
+            backup = os.path.join(story_dir, "agent_assets", os.path.basename(os.path.dirname(relative_path)))
+            if os.path.isfile(os.path.join(backup, "agent.json")):
+                shutil.copytree(backup, os.path.dirname(target), dirs_exist_ok=True)
+                restored.append(name)
+                continue
+            source = os.path.join(templates_root, str(template_map.get(name) or ""), "agent.json")
+            if not os.path.isfile(source):
+                logger.warning("Missing template for story %s agent %s", story_name, name)
+                continue
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(source, encoding="utf-8") as f:
+                agent = json.load(f)
+            agent["name"] = name
+            agent["relationships"] = copy.deepcopy(agent_cfg.get("relationships") or {})
+            agent["currently"] = meta.get("story_opening", agent.get("currently", ""))
+            agent["portrait"] = relative_path.rsplit("/", 1)[0] + "/portrait.png"
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(agent, f, ensure_ascii=False, indent=2)
+            for asset_name in ("portrait.png", "texture.png"):
+                source_asset = os.path.join(os.path.dirname(source), asset_name)
+                if os.path.isfile(source_asset):
+                    shutil.copyfile(source_asset, os.path.join(os.path.dirname(target), asset_name))
+            restored.append(name)
+    return restored

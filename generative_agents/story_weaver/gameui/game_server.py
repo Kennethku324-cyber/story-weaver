@@ -23,6 +23,7 @@ from story_weaver.recap.api import configure as configure_recap
 from story_weaver.recap.api import recap_bp
 from story_weaver.recap.service import RecapService
 from story_weaver.routes import setup_bp
+from story_weaver.builder import restore_story_agent_assets
 
 from .models import UIStatus
 from .llm_settings import load_settings, save_settings, test_llm
@@ -101,6 +102,11 @@ def create_app() -> Flask:
         static_folder=os.path.join(GEN_ROOT, "frontend", "static"),
         static_url_path="/static",
     )
+    restored = restore_story_agent_assets(
+        app.static_folder, _checkpoints_root()
+    )
+    if restored:
+        logger.info("Restored story agent assets: %s", ", ".join(restored))
     # 開發期：模板改咗即時生效，唔使重啟 server
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.register_blueprint(setup_bp)
