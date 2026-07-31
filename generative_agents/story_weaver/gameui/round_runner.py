@@ -29,7 +29,16 @@ from .state_store import GameUIStateStore, create_initial_state
 
 logger = logging.getLogger(__name__)
 
-SIMULATE_FILE_RE = re.compile(r"^simulate-\d{8}-\d{4}\.json$")  # simulate-YYYYMMDD-HHMM.json（start.py 寫檔格式）
+SIMULATE_FILE_RE = re.compile(r"^simulate-\d{8}-\d{4}\.json$")
+
+# [story-weaver:debug] 寫 debug log 去 story folder（persistent volume, 可以 SSH 睇）
+def _debug_log(folder: str, msg: str) -> None:
+    import datetime as _dt
+    try:
+        with open(os.path.join(folder, "_debug.log"), "a", encoding="utf-8") as f:
+            f.write(f"{_dt.datetime.now().isoformat()} {msg}\n")
+    except Exception:
+        pass  # simulate-YYYYMMDD-HHMM.json（start.py 寫檔格式）
 
 
 class RoundBusyError(RuntimeError):
@@ -354,18 +363,22 @@ class RoundRunner:
             with self.store.mutate() as s:
                 s.status = UIStatus.SIMULATING
                 s.error = None
+            _debug_log(self.folder, f"start_round: creating thread for round {round_no}")
             self._thread = threading.Thread(
                 target=self._run_round, args=(round_no,), daemon=True
             )
             self._thread.start()
+            _debug_log(self.folder, f"start_round: thread started, id={self._thread.ident}")
             return round_no
         except Exception:
             RoundRunner._global_sim_lock.release()
             raise
 
     def _run_round(self, round_no: int) -> None:
+        _debug_log(self.folder, f"_run_round: ENTER round={round_no} thread={threading.current_thread().ident}")
         try:
             self._run_round_inner(round_no)
+            _debug_log(self.folder, f"_run_round: EXIT round={round_no}")
         except Exception as e:
             # [story-weaver:crash-guard] catch 所有漏網 exception，
             # 確保 server process 唔會死（之前有 crash 令成個 server 斷線）
@@ -383,9 +396,11 @@ class RoundRunner:
             # lock 已喺 _run_round_inner 嘅 finally 釋放，唔使再 release
 
     def _run_round_inner(self, round_no: int) -> None:
+        _debug_log(self.folder, f"_run_round_inner: ENTER round={round_no}")
         try:
             # [story-weaver:server-rebuild] 每回合強制重建 server，
             # 確保 start_step 由 game_ui_state.sim_step_cursor 決定（唔會 re-simulate）
+            _debug_log(self.folder, "_run_round_inner: acquiring _server_lock to null _server")
             with self._server_lock:
                 self._server = None
             state = self.store.load()
