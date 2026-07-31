@@ -336,26 +336,9 @@ class RoundRunner:
         return self._server
 
     def prewarm(self) -> None:
-        """背景預建 SimulateServer：等玩家撳掣時唔使即場等重建（新舊故事都做）。"""
-        if self._server is not None or self._server_factory is not None:
-            _debug_log(self.folder, "prewarm: skipped (already built)")
-            return
-        try:
-            _debug_log(self.folder, "prewarm: spawning prewarm thread")
-            threading.Thread(target=self._prewarm_run, daemon=True).start()
-        except Exception:
-            _debug_log(self.folder, f"prewarm: FAILED to spawn thread")
-            logger.warning("round_runner: prewarm 失敗", exc_info=True)
-
-    def _prewarm_run(self) -> None:
-        _debug_log(self.folder, "_prewarm_run: ENTER")
-        try:
-            self._get_server()
-            _debug_log(self.folder, "_prewarm_run: server built OK")
-            logger.info("round_runner: %s server 預熱完成", self.session)
-        except Exception as e:
-            _debug_log(self.folder, f"_prewarm_run: FAILED {e}")
-            logger.warning("round_runner: %s server 預熱失敗", self.session, exc_info=True)
+        """背景預建 SimulateServer：暫時停用（debug 中，prewarm lock 問題）。"""
+        _debug_log(self.folder, "prewarm: DISABLED")
+        return
 
     def start_round(self) -> int:
         """開下一回合。status 唔啱 / 已有推演 → RoundBusyError。返回回合編號。
