@@ -1,11 +1,11 @@
 {
   "name": "伊莎貝拉",
-  "portrait": "assets/village/story_agents/444434/伊莎貝拉/portrait.png",
+  "portrait": "assets/village/story_agents/當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢……/伊莎貝拉/portrait.png",
   "coord": [
     72,
     14
   ],
-  "currently": "伊莎貝拉係霍布斯咖啡館的老闆。當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢…………",
+  "currently": "伊莎貝拉係霍布斯咖啡館的老闆。當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢……",
   "scratch": {
     "age": 34,
     "innate": "友好、外向、好客",
@@ -90,15 +90,15 @@
   },
   "relationships": {
     "克勞斯": {
-      "score": 30,
+      "score": 85,
       "desc": ""
     },
     "卡洛斯": {
-      "score": 80,
+      "score": 40,
       "desc": ""
     },
     "山本百合子": {
-      "score": 40,
+      "score": 45,
       "desc": ""
     }
   }

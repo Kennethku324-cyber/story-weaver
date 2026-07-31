@@ -3,7 +3,7 @@
     "provider": "openai",
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com",
-    "api_key": "sk-df53abfc51d44fc4ab64d473c079181c"
+    "api_key": "sk-8d4fe0edfa9d4003a7add6205bb92c08"
   },
   "option_poignancy": 8,
   "custom_poignancy": 10,

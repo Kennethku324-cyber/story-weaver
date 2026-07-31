@@ -1,11 +1,11 @@
 {
   "name": "克勞斯",
-  "portrait": "assets/village/story_agents/444434/克勞斯/portrait.png",
+  "portrait": "assets/village/story_agents/當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢……/克勞斯/portrait.png",
   "coord": [
-    126,
+    127,
     46
   ],
-  "currently": "克勞斯係奧克山學院社會學專業的學生。當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢…………",
+  "currently": "克勞斯係奧克山學院社會學專業的學生。當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢……",
   "scratch": {
     "age": 20,
     "innate": "善良、好奇、熱情",
@@ -109,16 +109,16 @@
     }
   },
   "relationships": {
-    "伊莎貝拉": {
-      "score": 85,
-      "desc": ""
-    },
     "卡洛斯": {
-      "score": 35,
+      "score": 30,
       "desc": ""
     },
     "山本百合子": {
-      "score": 30,
+      "score": 80,
+      "desc": ""
+    },
+    "伊莎貝拉": {
+      "score": 35,
       "desc": ""
     }
   }

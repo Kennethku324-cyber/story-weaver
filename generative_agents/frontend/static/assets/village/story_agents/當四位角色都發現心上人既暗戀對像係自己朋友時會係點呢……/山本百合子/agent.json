@@ -1,11 +1,11 @@
 {
   "name": "山本百合子",
-  "portrait": "assets/village/story_agents/444434/山本百合子/portrait.png",
+  "portrait": "assets/village/story_agents/當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢……/山本百合子/portrait.png",
   "coord": [
-    29,
+    28,
     65
   ],
-  "currently": "山本百合子係一名税務律師。當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢…………",
+  "currently": "山本百合子係一名税務律師。當四位角色都發現心上人既暗戀對像係自己朋友時會係點呢……",
   "scratch": {
     "age": 28,
     "innate": "有條理、可靠、注重細節",
@@ -87,15 +87,15 @@
   },
   "relationships": {
     "克勞斯": {
+      "score": 40,
+      "desc": ""
+    },
+    "卡洛斯": {
       "score": 80,
       "desc": ""
     },
     "伊莎貝拉": {
-      "score": 45,
-      "desc": ""
-    },
-    "卡洛斯": {
-      "score": 45,
+      "score": 40,
       "desc": ""
     }
   }

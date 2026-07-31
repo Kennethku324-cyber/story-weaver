@@ -14,7 +14,7 @@
         "provider": "openai",
         "model": "deepseek-chat",
         "base_url": "https://api.deepseek.com",
-        "api_key": ""
+        "api_key": "sk-8d4fe0edfa9d4003a7add6205bb92c08"
       },
       "interval": 1000,
       "poignancy_max": 150

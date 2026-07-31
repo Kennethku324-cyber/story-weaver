@@ -156,7 +156,18 @@ def save_settings(payload: dict) -> list[str]:
 
 
 def test_llm(cfg: dict) -> tuple[bool, str]:
-    """試連線：LLM 叫佢講一句嘢；hugging_face embedding 就 embed 一句嘢。返 (ok, 訊息)。"""
+    """試連線：LLM 叫佢講一句嘢；hugging_face embedding 就 embed 一句嘢。返 (ok, 訊息)。
+    如果 frontend 傳嚟嘅 api_key 係空（masked），就從 config file / env var 補返。"""
+    if not cfg.get("api_key", "").strip():
+        # Frontend 會 mask 咗 key → 從 config file 攞真 key
+        cfg = dict(cfg)
+        config = _read_json(CONFIG_PATH)
+        gm_config = _read_json(GM_CONFIG_PATH)
+        saved = config.get("agent", {}).get("think", {}).get("llm", {}).get("api_key", "")
+        saved_gm = gm_config.get("llm", {}).get("api_key", "")
+        cfg["api_key"] = saved or saved_gm or os.environ.get("DEEPSEEK_API_KEY", "")
+        if not cfg["base_url"].strip():
+            cfg["base_url"] = config.get("agent", {}).get("think", {}).get("llm", {}).get("base_url", "")
     err = _validate_section("LLM", cfg)
     if err:
         return False, err
