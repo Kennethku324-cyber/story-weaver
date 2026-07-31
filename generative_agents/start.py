@@ -280,7 +280,7 @@ parser.add_argument("--step", type=int, default=10, help="The simulate step")
 parser.add_argument("--stride", type=int, default=10, help="The step stride in minute")
 parser.add_argument("--verbose", type=str, default="debug", help="The verbose level")
 parser.add_argument("--log", type=str, default="", help="Name of the log file")
-args = parser.parse_args()
+args = parser.parse_args() if __name__ == "__main__" else parser.parse_args([])
 
 
 if __name__ == "__main__":
