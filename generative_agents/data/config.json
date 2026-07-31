@@ -19,7 +19,7 @@
       "interval": 1000,
       "poignancy_max": 150
     },
-    "chat_iter": 2,
+    "chat_iter": 1,
     "associate": {
       "embedding": {
         "provider": "hugging_face",
@@ -27,7 +27,7 @@
         "base_url": "",
         "api_key": ""
       },
-      "retention": 8
+      "retention": 4
     }
   }
 }
