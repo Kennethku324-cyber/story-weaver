@@ -166,9 +166,13 @@ site
 **/.idea
 
 **/.claude
-**/checkpoints
-**/generative_agents/data/config.json
-**/generative_agents/data/gm_config.json
+# Exclude runtime checkpoint files but keep story setup files
+**/checkpoints/*/simulate-*.json
+**/checkpoints/*/conversation.json
+**/checkpoints/*/gm_state.json*
+**/checkpoints/*/game_ui_state.json*
+**/checkpoints/*/story_recap.json*
+**/checkpoints/*/storage/
 
 # flyctl launch added from .pytest_cache/.gitignore
 # Created by pytest automatically.

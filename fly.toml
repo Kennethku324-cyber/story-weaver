@@ -7,12 +7,11 @@ app = 'story-weaver'
 primary_region = 'sin'
 
 [build]
-  builder = 'paketobuildpacks/builder:base'
+  dockerfile = 'Dockerfile'
 
 [env]
   DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
   PYTHON_VERSION = '3.11'
-  DEEPSEEK_API_KEY = ''  # set via: fly secrets set DEEPSEEK_API_KEY=sk-xxx
 
 [[mounts]]
   source = 'checkpoints'

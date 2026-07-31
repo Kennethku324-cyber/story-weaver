@@ -9,7 +9,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 sim_timing_logger = logging.getLogger("sim_timing")
 
-from dotenv import load_dotenv, find_dotenv
+try:
+    from dotenv import load_dotenv, find_dotenv
+except ImportError:
+    load_dotenv = None  # type: ignore
+    find_dotenv = None  # type: ignore
 
 from modules.game import create_game, get_game
 from modules import utils
@@ -265,7 +269,8 @@ def get_config(start_time="20240213-09:30", stride=15, agents=None,
     return config
 
 
-load_dotenv(find_dotenv())
+if load_dotenv and find_dotenv:
+    load_dotenv(find_dotenv())
 
 parser = argparse.ArgumentParser(description="console for village")
 parser.add_argument("--name", type=str, default="", help="The simulation name")
