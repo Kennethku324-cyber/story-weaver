@@ -10,6 +10,6 @@
   "poignancy_boost": 50,
   "max_rounds": 4,
   "min_rounds_to_finish": 2,
-  "steps_per_round": 1,
+  "steps_per_round": 4,
   "allow_negative_elements": true
 }
