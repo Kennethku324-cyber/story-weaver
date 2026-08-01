@@ -61,6 +61,24 @@
 	};
 
 	const game = new Phaser.Game(config);
+	// [story-weaver:canvas-perf] suppress willReadFrequently warning
+	(function _patchCanvas() {
+		const orig = document.createElement.bind(document);
+		document.createElement = function(tag, opts) {
+			const el = orig(tag, opts);
+			if (tag === 'canvas' && !el._swPatched) {
+				el._swPatched = true;
+				const origGetCtx = el.getContext.bind(el);
+				el.getContext = function(type, attrs) {
+					if (type === '2d') {
+						attrs = Object.assign({willReadFrequently: true}, attrs || {});
+					}
+					return origGetCtx(type, attrs);
+				};
+			}
+			return el;
+		};
+	})();
 	let cursors;
 	let player;
 
