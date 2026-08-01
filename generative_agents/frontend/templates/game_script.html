@@ -261,6 +261,7 @@
 		}
 
 		if (finished || paused) return;
+		if (step <= 3 || step % 30 === 0) console.log("[DEBUG] update: step=" + step + " ec=" + execute_count + " max=" + execute_count_max + " keys=" + Object.keys(all_movement).length);
 		document.getElementById("ui-anim-step").textContent = step;
 		// 未有 frame 數據就唔好浪費 step（新 game 等緊第一次推演）
 		if (Object.keys(all_movement).length === 0) return;
