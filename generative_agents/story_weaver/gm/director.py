@@ -216,8 +216,9 @@ class GMDirector:
         forced_meetings = self.state.data.get("next_forced_meetings") or []
         pressure = int(self.state.data.get("dramatic_pressure", 1))
 
-        # 壓力驅動：高壓時冇人為規劃就自動配對
-        if pressure >= 3 and not forced_meetings:
+        # [story-weaver:always-meet] 每個回合都嘗試令角色見面——
+        # 冇人為規劃就自動配對（唔再限 pressure >= 3）
+        if not forced_meetings:
             try:
                 forced_meetings = self._pick_conflict_pair(server)
                 if forced_meetings:
@@ -402,7 +403,20 @@ class GMDirector:
     def _find_meeting_locations(
         self, pairs: list[list[str]], agents: dict
     ) -> dict[tuple, list]:
-        """為每對角色搵一個共同見面地點（優先揀是但一方嘅當前位置）。"""
+        """為每對角色揀一個共同見面地點。
+        [story-weaver:dramatic-meet] 優先揀遠離兩人嘅 public 地點（公園、咖啡館、廣場），
+        令角色必須跨區移動，生成可見嘅行路動畫。"""
+        # 戲劇性 public 地點：cafe(63,67), park(88,41), plaza(94,21), bar(62,18), library(90,72)
+        DRAMATIC_SPOTS: list[list] = [
+            [63, 67],  # 咖啡館
+            [88, 41],  # 公園
+            [94, 21],  # 廣場
+            [62, 18],  # 酒吧
+            [90, 72],  # 圖書館
+            [52, 63],  # 玫瑰酒吧（備用）
+            [103, 42], # 市中心
+            [72, 38],  # 餐廳區
+        ]
         coords: dict[tuple, list] = {}
         for pair in pairs:
             if len(pair) < 2:
@@ -412,13 +426,32 @@ class GMDirector:
                 continue
             a = agents.get(pair[0])
             b = agents.get(pair[1])
+            a_coord = list(a.coord) if a and a.coord else None
+            b_coord = list(b.coord) if b and b.coord else None
+
+            # [story-weaver:dramatic-meet] 揀離兩個角色都最遠嘅 public 地點
             coord = None
-            if a is not None and a.is_awake():
+            if a_coord and b_coord:
+                best = None
+                best_dist = -1
+                for spot in DRAMATIC_SPOTS:
+                    d_a = abs(spot[0] - a_coord[0]) + abs(spot[1] - a_coord[1])
+                    d_b = abs(spot[0] - b_coord[0]) + abs(spot[1] - b_coord[1])
+                    min_dist = min(d_a, d_b)
+                    # 優先揀令兩個人都要行遠路嘅地點（minimum travel distance 最大）
+                    if min_dist > best_dist:
+                        best_dist = min_dist
+                        best = spot
+                if best and best_dist > 5:
+                    coord = best
+
+            # fallback: 用是但一方位置
+            if coord is None and a is not None and a.is_awake():
                 coord = list(a.coord) if a.coord else None
             if coord is None and b is not None and b.is_awake():
                 coord = list(b.coord) if b.coord else None
             if coord is None:
-                coord = [94, 21]  # fallback：小鎮中心
+                coord = [94, 21]  # 小鎮廣場
             coords[key] = coord
         return coords
 

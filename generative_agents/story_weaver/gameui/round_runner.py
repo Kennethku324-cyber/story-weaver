@@ -415,6 +415,31 @@ class RoundRunner:
             )
             gm = self._get_gm()
             gm.on_round_start(server)
+            # [story-weaver:plot-move] 注入行路動畫：GM 移動咗角色後，
+            # 生成 from→to walking path frames，令 frontend show 到跨區移動
+            try:
+                pre_move = server.config.get("_pre_move_positions", {}) or {}
+                for agent_name, old_coord in pre_move.items():
+                    agent = server.game.agents.get(agent_name)
+                    if agent is None or not agent.coord:
+                        continue
+                    new_coord = list(agent.coord)
+                    if old_coord != new_coord:
+                        dist = abs(new_coord[0]-old_coord[0]) + abs(new_coord[1]-old_coord[1])
+                        # 距離愈遠愈多幀（最少 20，最多 90）
+                        num_frames = min(max(int(dist * 3), 20), 90)
+                        self.frames.inject_walking_path(
+                            agent_name, old_coord, new_coord,
+                            action=f"{agent_name} 正在前往命運嘅約定…",
+                            num_frames=num_frames,
+                        )
+                        logger.info(
+                            "round_runner: injected walking path for %s [%.0f,%.0f]→[%.0f,%.0f] (%d frames)",
+                            agent_name, old_coord[0], old_coord[1],
+                            new_coord[0], new_coord[1], num_frames,
+                        )
+            except Exception:
+                logger.warning("round_runner: walking path injection 失敗", exc_info=True)
             steps = self.steps_per_round()
             server.simulate(steps, state.stride)
             logger.info("round_runner: simulate 完成 — %d steps", steps)

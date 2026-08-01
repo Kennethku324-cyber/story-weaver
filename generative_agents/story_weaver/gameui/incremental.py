@@ -129,6 +129,52 @@ class FrameBuffer:
             "skipped": skipped,
         }
 
+    def inject_walking_path(
+        self,
+        agent_name: str,
+        from_coord: list,
+        to_coord: list,
+        action: str = "",
+        num_frames: int = 30,
+    ) -> int:
+        """[story-weaver:plot-move] 為一個角色注入行路動畫幀（from → to）。
+        喺現有最大 frame key 之後插入，返最終 frame key。"""
+        import math
+
+        start_key = self.latest_frame_key() + 1
+        for i in range(num_frames + 1):
+            t = i / max(num_frames, 1)
+            # ease-in-out
+            t_eased = 0.5 - 0.5 * math.cos(t * math.pi)
+            x = from_coord[0] + (to_coord[0] - from_coord[0]) * t_eased
+            y = from_coord[1] + (to_coord[1] - from_coord[1]) * t_eased
+            step_key = str(start_key + i)
+            frame = {}
+            # 複製所有 agent 嘅最後位置（佢哋唔郁）
+            for name, loc in self._last_location.items():
+                frame[name] = {
+                    "location": loc.get("location", ""),
+                    "movement": list(loc.get("movement", [x, y])),
+                    "action": "",
+                }
+            # 更新目標 agent 嘅位置
+            frame[agent_name] = {
+                "location": "",
+                "movement": [float(round(x, 2)), float(round(y, 2))],
+                "action": action or "正在前往命運嘅約定…",
+            }
+            self._frames[step_key] = frame
+        # 更新 last_location
+        self._last_location[agent_name] = {
+            "movement": [float(to_coord[0]), float(to_coord[1])],
+            "location": "",
+        }
+        logger.info(
+            "framebuffer: injected %d walking frames for %s [%.0f,%.0f] → [%.0f,%.0f]",
+            num_frames, agent_name, from_coord[0], from_coord[1], to_coord[0], to_coord[1],
+        )
+        return start_key + num_frames
+
     def seed_idle_frames(self, agent_positions: dict[str, list], num_frames: int = 120) -> None:
         """[story-weaver:idle] 未有 checkpoint 之前，用 spawn 位置生成初始踱步幀，
         等角色未推演都有嘢睇，唔會死企。"""
