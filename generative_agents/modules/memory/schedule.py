@@ -59,6 +59,14 @@ class Schedule:
                     continue
                 return plan, de_plan
             return plan, plan
+        # [story-weaver:empty-schedule] 日程為空時返 failsafe，避免 crash
+        if not self.daily_schedule:
+            failsafe_plan = {
+                "idx": 0, "describe": "空閒",
+                "start": total_minute, "duration": 60, "decompose": [],
+            }
+            self.daily_schedule.append(failsafe_plan)
+            return failsafe_plan, failsafe_plan
         last_plan = self.daily_schedule[-1]
         return last_plan, last_plan
 

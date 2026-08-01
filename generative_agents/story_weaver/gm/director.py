@@ -216,8 +216,8 @@ class GMDirector:
         forced_meetings = self.state.data.get("next_forced_meetings") or []
         pressure = int(self.state.data.get("dramatic_pressure", 1))
 
-        # 壓力驅動：高壓時冇人為規劃就自動配對
-        if pressure >= 3 and not forced_meetings:
+        # [story-weaver:always-meet] 每個回合都自動配對角色見面
+        if not forced_meetings:
             try:
                 forced_meetings = self._pick_conflict_pair(server)
                 if forced_meetings:

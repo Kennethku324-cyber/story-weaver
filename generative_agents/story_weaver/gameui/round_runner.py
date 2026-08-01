@@ -414,11 +414,23 @@ class RoundRunner:
                 server.start_step, server.config.get("step", -1)
             )
             gm = self._get_gm()
-            gm.on_round_start(server)
+            try:
+                gm.on_round_start(server)
+            except Exception:
+                logger.error("round_runner: gm.on_round_start 失敗", exc_info=True)
+                raise
             steps = self.steps_per_round()
-            server.simulate(steps, state.stride)
+            try:
+                server.simulate(steps, state.stride)
+            except Exception:
+                logger.error("round_runner: simulate 失敗", exc_info=True)
+                raise
             logger.info("round_runner: simulate 完成 — %d steps", steps)
-            self._on_round_complete(server, round_no, steps)
+            try:
+                self._on_round_complete(server, round_no, steps)
+            except Exception:
+                logger.error("round_runner: _on_round_complete 失敗", exc_info=True)
+                raise
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
