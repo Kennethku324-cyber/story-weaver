@@ -404,20 +404,8 @@ class GMDirector:
         self, pairs: list[list[str]], agents: dict
     ) -> dict[tuple, list]:
         """為每對角色揀一個共同見面地點。
-        [story-weaver:dramatic-meet] 優先揀遠離兩人嘅 public 地點（公園、咖啡館、廣場），
-        令角色必須跨區移動，生成可見嘅行路動畫。"""
-        # 戲劇性 public 地點（全部 within maze 100x140）
-        DRAMATIC_SPOTS: list[list] = [
-            [63, 67],  # 咖啡館
-            [88, 41],  # 公園
-            [94, 21],  # 廣場
-            [62, 18],  # 酒吧
-            [90, 72],  # 圖書館
-            [52, 63],  # 玫瑰酒吧
-            [72, 38],  # 餐廳區
-            [38, 50],  # 河畔步道
-            [80, 55],  # 市集
-        ]
+        優先揀是但一方嘅當前位置（保證 maze address 有效），
+        如果雙方都瞓咗就用小鎮廣場 fallback。"""
         coords: dict[tuple, list] = {}
         for pair in pairs:
             if len(pair) < 2:
@@ -427,32 +415,13 @@ class GMDirector:
                 continue
             a = agents.get(pair[0])
             b = agents.get(pair[1])
-            a_coord = list(a.coord) if a and a.coord and len(a.coord) >= 2 else None
-            b_coord = list(b.coord) if b and b.coord and len(b.coord) >= 2 else None
-
-            # [story-weaver:dramatic-meet] 揀離兩個角色都最遠嘅 public 地點
             coord = None
-            if a_coord and b_coord and len(a_coord) >= 2 and len(b_coord) >= 2:
-                best = None
-                best_dist = -1
-                for spot in DRAMATIC_SPOTS:
-                    d_a = abs(spot[0] - a_coord[0]) + abs(spot[1] - a_coord[1])
-                    d_b = abs(spot[0] - b_coord[0]) + abs(spot[1] - b_coord[1])
-                    min_dist = min(d_a, d_b)
-                    # 優先揀令兩個人都要行遠路嘅地點（minimum travel distance 最大）
-                    if min_dist > best_dist:
-                        best_dist = min_dist
-                        best = spot
-                if best and best_dist > 5:
-                    coord = best
-
-            # fallback: 用是但一方位置
-            if coord is None and a is not None and a.is_awake():
+            if a is not None and a.is_awake():
                 coord = list(a.coord) if a.coord else None
             if coord is None and b is not None and b.is_awake():
                 coord = list(b.coord) if b.coord else None
             if coord is None:
-                coord = [94, 21]  # 小鎮廣場
+                coord = [94, 21]  # fallback：小鎮中心
             coords[key] = coord
         return coords
 

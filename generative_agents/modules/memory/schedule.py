@@ -59,6 +59,21 @@ class Schedule:
                     continue
                 return plan, de_plan
             return plan, plan
+        # [story-weaver:empty-schedule] 日程為空時（跨日未 regenerate / 未初始化）
+        # 返一個 failsafe plan 而唔係 crash，令 GM revise 可以 gracefully fail
+        if not self.daily_schedule:
+            total_minute = utils.get_timer().daily_duration()
+            hour = total_minute // 60
+            failsafe_plan = {
+                "idx": 0,
+                "describe": "空閒",
+                "start": total_minute,
+                "duration": 60,
+                "decompose": [],
+            }
+            # 將 failsafe 寫入 schedule，令後續 code 唔使重複處理空列表
+            self.daily_schedule.append(failsafe_plan)
+            return failsafe_plan, failsafe_plan
         last_plan = self.daily_schedule[-1]
         return last_plan, last_plan
 
