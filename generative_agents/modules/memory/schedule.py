@@ -101,6 +101,8 @@ class Schedule:
     def scheduled(self):
         if not self.daily_schedule:
             return False
+        if self.create is None:
+            return False
         return utils.get_timer().daily_format() == self.create.strftime("%A %B %d")
 
     def to_dict(self):
