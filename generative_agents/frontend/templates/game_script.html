@@ -240,6 +240,12 @@
 	}
 
 	function update(time, delta) {
+		// [story-weaver:heartbeat] 確認 update loop 行緊
+		if (!window._frameCount) window._frameCount = 0;
+		window._frameCount++;
+		if (window._frameCount <= 3 || window._frameCount % 120 === 0) {
+			console.log("[HEARTBEAT] frame=" + window._frameCount + " step=" + step + " ec=" + execute_count + " max=" + execute_count_max + " all_move_keys=" + Object.keys(all_movement).length + " finished=" + finished + " paused=" + paused);
+		}
 		buttonPause.on("pointerdown", function() {
 			if (finished) return;
 			paused = !paused;
