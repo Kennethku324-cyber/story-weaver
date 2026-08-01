@@ -13,17 +13,8 @@
 	let execute_count_max = tile_width / movement_speed;
 	let execute_count = execute_count_max;
 	let all_movement = {};   // 由 pollState() 漸進 Object.assign 注入
-	let animation_round = 0;
-
-	function resetAnimationForRound(round) {
-		if (round <= animation_round) return;
-		animation_round = round;
-		all_movement = {};
-		step = 1;
-		execute_count = execute_count_max;
-		movement_target = {};
-		last_applied = {};
-	}
+	// frame key 跨回合累積（backend incremental.py _cumulative_step），
+	// 唔會每回合由 1 重新編號；重玩經 location.reload() 重置全部 JS 狀態。
 
 	let datetime_options = { weekday: "long", year: "numeric", month: "long", day: "numeric" };
 	let start_datetime = new Date(Date.parse({{ start_datetime|tojson }}));
@@ -298,6 +289,20 @@
 		if (Object.keys(all_movement).length === 0) return;
 			if (step % 30 === 0 && step > 0) { var _n=Object.keys(personas).slice(0,2); var _p=_n.map(function(n){var s=personas[n];return n+"@("+Math.round(s.body.x)+","+Math.round(s.body.y)+")";}); console.log("[MOVE] step="+step+" "+_p.join(" | ")); }
 
+		// [story-weaver:catch-up] 兩個追進度機制，等 GM 相遇行路即時播到：
+		// 1) 當前 step 冇數據但後面仲有 key → 即刻跳過空洞（唔好呆等 execute_count
+		//    逐格爬，否則乾等期間 step 會爬過新到嘅 frame，行路永遠播唔出）
+		// 2) 落後最新 key 太多 → advance 時加大 stride 跳幀（見下面 step 推進）
+		let max_movement_key = 0;
+		for (let k in all_movement) { let kn = parseInt(k); if (kn > max_movement_key) max_movement_key = kn; }
+		if (!(step in all_movement) && max_movement_key > step) {
+			let next_key = max_movement_key;
+			for (let k in all_movement) { let kn = parseInt(k); if (kn >= step && kn < next_key) next_key = kn; }
+			console.log("[CATCH-UP] step " + step + " 冇數據，跳去 key " + next_key + "（max=" + max_movement_key + "）");
+			step = next_key;
+			execute_count = execute_count_max;   // 觸發下面即刻讀新 target
+		}
+
 		for (let i = 0; i < Object.keys(personas).length; i++) {
 			let curr_persona_name = Object.keys(personas)[i];
 			let curr_persona = personas[curr_persona_name];
@@ -371,7 +376,12 @@
 					personas[curr_persona_name].body.y = movement_target[curr_persona_name][1];
 				}
 			}
-			step = step + 1;
+			// [story-weaver:catch-up] 落後最新 key 愈多跳得愈快：>30 跳 2×、
+			// >90 跳 4×、>180 跳 8×。每回合產 240 frame 但 sim 幾十秒就完成，
+			// 唔跳幀嘅話 playback 會愈落愈後，GM 情節郁動延遲幾分鐘先睇到。
+			let backlog = max_movement_key - step;
+			let stride = backlog > 180 ? 8 : (backlog > 90 ? 4 : (backlog > 30 ? 2 : 1));
+			step = step + stride;
 			// [story-weaver:no-adaptive] 停用適應式節奏，固定 execute_count_max 避免 desync
 			execute_count = execute_count_max + 1;
 			start_datetime = new Date(start_datetime.getTime() + step_size);

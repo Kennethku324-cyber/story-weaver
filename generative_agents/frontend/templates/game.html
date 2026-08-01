@@ -208,11 +208,9 @@ function pollState() {
   $.getJSON("/api/state", {
     name: SESSION, since_frame: sinceFrame, since_feed: sinceFeed, client_id: clientId
   }).done(function(resp) {
-    // Each round numbers animation frames from 1 again.
-    if (resp.round > animation_round) {
-      resetAnimationForRound(resp.round);
-      sinceFrame = 0;
-    }
+    // [story-weaver:cumulative-frames] frame key 跨回合累積（incremental.py
+    // _cumulative_step），唔可以每回合 reset cursor——否則 step 會由 1 重新
+    // 爬過冇數據嘅歷史 key，角色呆企幾分鐘先播到 GM 相遇嘅行路 frame。
     if (resp.new_frames) {
       Object.assign(all_movement, resp.new_frames);
       console.log("[DEBUG] pollState: received " + Object.keys(resp.new_frames).length + " frames, latest=" + resp.frame_latest + ", all_movement now has " + Object.keys(all_movement).length + " keys");
