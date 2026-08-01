@@ -272,18 +272,24 @@
 			let curr_pronunciatio = pronunciatios[curr_persona_name];
 
 			if (step in all_movement) {
-				if (curr_persona_name.replace("_", " ") in all_movement[step] ||
-				    curr_persona_name in all_movement[step]) {
-					let agent_key = (curr_persona_name in all_movement[step])
-						? curr_persona_name : curr_persona_name.replace("_", " ");
+				// [story-weaver:defensive] multi-format key lookup + null guard
+				let agent_data = all_movement[step][curr_persona_name];
+				if (!agent_data) {
+					agent_data = all_movement[step][curr_persona_name.replace(/_/g, " ")];
+				}
+				if (!agent_data) {
+					agent_data = all_movement[step][curr_persona_name.replace(/ /g, "_")];
+				}
+				if (agent_data && agent_data.movement && agent_data.movement.length >= 2) {
+					let agent_key = curr_persona_name;
 					if (execute_count == execute_count_max) {
-						let curr_x = all_movement[step][agent_key]["movement"][0];
-						let curr_y = all_movement[step][agent_key]["movement"][1];
+						let curr_x = agent_data.movement[0];
+						let curr_y = agent_data.movement[1];
 						if (step <= 5) console.log("[MOVE] step=" + step + " " + agent_key + " target=[" + curr_x + "," + curr_y + "] sprite_at=[" + Math.round(curr_persona.body.x) + "," + Math.round(curr_persona.body.y) + "]");
 						movement_target[curr_persona_name] = [curr_x * tile_width, curr_y * tile_width];
 						last_applied[agent_key] = [curr_x, curr_y];
 
-						let action = all_movement[step][agent_key]["action"];
+						let action = (agent_data && agent_data.action) ? agent_data.action : "";
 						// label_text = action（目前行動），currently 留俾角色 detail panel
 						let act = action.length > 25 ? action.substring(0, 22)+"…" : action;
 						pronunciatios[curr_persona_name].setText(curr_persona_name + ": " + act);
