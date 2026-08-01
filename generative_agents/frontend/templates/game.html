@@ -11,25 +11,25 @@
   #error-banner, #readonly-banner { display: none; padding: .5em 1em; }
   #error-banner { background: #f8d7da; color: #842029; }
   #readonly-banner { background: #fff3cd; color: #664d03; }
-  /* ── 右下 floating 故事情節 panel ── */
-  #side-panel { position: fixed; bottom: 0; right: 0; z-index: 1000;
-                width: 360px; max-height: 50vh; display: flex; flex-direction: column;
-                font-size: 13px; }
-  #side-panel.collapsed #side-panel-inner { display: none; }
-  #side-panel-toggle { position: absolute; bottom: 0; right: 8px;
-                       background: rgba(179,84,30,0.85); color: #fff; border: none;
-                       border-radius: 6px 6px 0 0; padding: 4px 14px;
-                       font-size: 12px; cursor: pointer; }
-  #side-panel-toggle:hover { background: #b3541e; }
-  #side-panel-inner { background: rgba(250,250,250,0.94); border: 1px solid #ddd;
-                      border-right: none; border-bottom: none; border-radius: 8px 0 0 0;
-                      overflow: hidden; display: flex; flex-direction: column;
-                      backdrop-filter: blur(4px); }
+  /* ── 右側 panel（push 地圖，唔 overlay）── */
+  #main-area { display: flex; flex-direction: row; align-items: stretch; }
+  #game-col { flex: 1; min-width: 0; overflow: hidden; }
+  #side-panel { width: 0; overflow: hidden; display: flex; flex-direction: column;
+                background: #fafafa; border-left: 2px solid #b3541e;
+                transition: width 0.2s; font-size: 13px; }
+  #side-panel:not(.collapsed) { width: 360px; }
+  #side-panel-toggle { flex-shrink: 0; writing-mode: vertical-rl;
+                       background: #b3541e; color: #fff; border: none;
+                       padding: 10px 6px; font-size: 13px; cursor: pointer;
+                       letter-spacing: 2px; }
+  #side-panel-toggle:hover { background: #c5652e; }
+  #side-panel-inner { flex: 1; display: flex; flex-direction: column;
+                      overflow: hidden; min-height: 0; }
   #side-panel-tabs { display: flex; border-bottom: 1px solid #ddd; flex-shrink: 0; }
   #side-panel-tabs span { flex: 1; text-align: center; padding: .4em 0; cursor: pointer;
                           font-weight: bold; color: #999; font-size: 13px; }
   #side-panel-tabs span.active { color: #b3541e; border-bottom: 2px solid #b3541e; }
-  #feed { overflow-y: auto; padding: .5em; font-size: 12px; flex: 1; min-height: 120px; }
+  #feed { overflow-y: auto; padding: .5em; font-size: 12px; flex: 1; }
   .feed-event { margin-bottom: .3em; }
   .feed-chat { margin-bottom: .5em; background: #fff; border-left: 3px solid #b3541e;
                padding: .2em .5em; }
@@ -77,8 +77,25 @@
   <span id="sb-pressure" style="margin-left:1em; color:#b3541e;"></span>
 </div>
 
-<!-- 地圖全闊 -->
-<div id="game-container" style="text-align: center"></div>
+<!-- 地圖 + 側欄 flex row（panel push 地圖，唔 overlay） -->
+<div id="main-area">
+  <div id="game-col">
+    <div id="game-container" style="text-align: center"></div>
+  </div>
+  <div id="side-panel" class="collapsed">
+    <button id="side-panel-toggle" title="展開情節">📜 情節</button>
+    <div id="side-panel-inner">
+      <div id="side-panel-tabs">
+        <span class="active" data-tab="feed">📜 情節</span>
+        <span data-tab="affinity">❤️ 好感</span>
+      </div>
+      <div id="feed"></div>
+      <div id="affinity-panel" style="display:none">
+        <table class="table table-condensed"><tbody id="affinity-body"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- 角色 icon bar（地圖下面） -->
 <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: .3em;
@@ -119,21 +136,6 @@
   </div>
 </div>
 {% endfor %}
-
-<!-- 右下 floating panel：故事情節 + 好感度（預設隱藏） -->
-<div id="side-panel" class="collapsed">
-  <button id="side-panel-toggle" title="展開情節">📜 情節 ◀</button>
-  <div id="side-panel-inner">
-    <div id="side-panel-tabs">
-      <span class="active" data-tab="feed">📜 情節</span>
-      <span data-tab="affinity">❤️ 好感</span>
-    </div>
-    <div id="feed"></div>
-    <div id="affinity-panel" style="display:none">
-      <table class="table table-condensed"><tbody id="affinity-body"></tbody></table>
-    </div>
-  </div>
-</div>
 
 <!-- 決策 modal（唔可以撳背景 / ESC 關閉） -->
 <div class="modal fade" id="decision-modal" data-backdrop="static" data-keyboard="false" tabindex="-1">
@@ -591,17 +593,19 @@ $('#on_screen_det_trigger-{{ p }}').click(function() {
 {% endfor %}
 $("#game-container").append('<div style="display:none" id="temp_focus"></div>');
 
-// ── floating panel toggle + tab switching ──
+// ── side panel toggle（push 地圖，唔 overlay）──
 $("#side-panel-toggle").on("click", function() {
   const panel = $("#side-panel");
   const toggle = $(this);
   if (panel.hasClass("collapsed")) {
     panel.removeClass("collapsed");
-    toggle.text("📜 情節 ▶");
+    toggle.text("📜 ▶");
   } else {
     panel.addClass("collapsed");
-    toggle.text("📜 情節 ◀");
+    toggle.text("📜 情節");
   }
+  // 等 CSS transition 完（200ms）通知 Phaser resize
+  setTimeout(function() { window.dispatchEvent(new Event("resize")); }, 250);
 });
 $("#side-panel-tabs span").on("click", function() {
   const tab = $(this).data("tab");
