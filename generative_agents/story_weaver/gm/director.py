@@ -216,9 +216,8 @@ class GMDirector:
         forced_meetings = self.state.data.get("next_forced_meetings") or []
         pressure = int(self.state.data.get("dramatic_pressure", 1))
 
-        # [story-weaver:always-meet] 每個回合都嘗試令角色見面——
-        # 冇人為規劃就自動配對（唔再限 pressure >= 3）
-        if not forced_meetings:
+        # 壓力驅動：高壓時冇人為規劃就自動配對
+        if pressure >= 3 and not forced_meetings:
             try:
                 forced_meetings = self._pick_conflict_pair(server)
                 if forced_meetings:
@@ -403,9 +402,7 @@ class GMDirector:
     def _find_meeting_locations(
         self, pairs: list[list[str]], agents: dict
     ) -> dict[tuple, list]:
-        """為每對角色揀一個共同見面地點。
-        優先揀是但一方嘅當前位置（保證 maze address 有效），
-        如果雙方都瞓咗就用小鎮廣場 fallback。"""
+        """為每對角色搵一個共同見面地點（優先揀是但一方嘅當前位置）。"""
         coords: dict[tuple, list] = {}
         for pair in pairs:
             if len(pair) < 2:
