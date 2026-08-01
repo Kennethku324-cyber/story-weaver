@@ -58,11 +58,14 @@ class FrameBuffer:
         self._files_processed: set[str] = set()  # [story-weaver:dedup] 用檔名去重（唔用 step number，因為 checkpoint step 會跨回合重置）
         self._last_step = 0
         self._cumulative_step = 0  # [story-weaver:dedup] 累積 step counter，避免 frame key 碰撞
+        import threading
+        self._lock = threading.Lock()  # [story-weaver:streaming] 保護 scan/frames_since 並發
 
     # ---------------------------------------------------------------- 查詢
 
     def frames_since(self, frame_cursor: int) -> dict[str, dict]:
-        return {k: v for k, v in self._frames.items() if k.isdigit() and int(k) > frame_cursor}
+        with self._lock:
+            return {k: v for k, v in self._frames.items() if k.isdigit() and int(k) > frame_cursor}
 
     def latest_frame_key(self) -> int:
         keys = [int(k) for k in self._frames.keys() if k.isdigit()]
@@ -83,6 +86,10 @@ class FrameBuffer:
 
     def scan(self, processed_steps: list[int] | None = None) -> dict:
         """掃新 checkpoint，更新內部狀態。返回 {"new_frames", "new_feed", "last_step", "skipped"}。"""
+        with self._lock:
+            return self._scan_unlocked(processed_steps)
+
+    def _scan_unlocked(self, processed_steps: list[int] | None = None) -> dict:
         processed = set(processed_steps or [])
         try:
             files = sorted(

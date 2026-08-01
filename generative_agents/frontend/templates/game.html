@@ -295,7 +295,7 @@ function pollState() {
     // [story-weaver:replay] 故事完結或暫停時顯示重玩掣
     $("#btn-replay").toggle(resp.status === "finished" || resp.status === "idle");
   }).always(function() {
-    setTimeout(pollState, 2000);
+    setTimeout(pollState, 800);  // [story-weaver:streaming] 更快輪詢
   });
 }
 

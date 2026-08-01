@@ -420,11 +420,23 @@ class RoundRunner:
                 logger.error("round_runner: gm.on_round_start 失敗", exc_info=True)
                 raise
             steps = self.steps_per_round()
+            # [story-weaver:streaming] 背景 scanner：simulation 每生成一個 checkpoint
+            # 就即刻 scan 入 FrameBuffer，等 frontend poll 到最新 movement frames
+            _scan_stop = threading.Event()
+            def _bg_scan():
+                while not _scan_stop.is_set():
+                    try:
+                        self.frames.scan(state.processed_steps)
+                    except Exception:
+                        pass
+                    _scan_stop.wait(1.0)  # 每秒 scan 一次
+            _scan_thread = threading.Thread(target=_bg_scan, daemon=True)
+            _scan_thread.start()
             try:
                 server.simulate(steps, state.stride)
-            except Exception:
-                logger.error("round_runner: simulate 失敗", exc_info=True)
-                raise
+            finally:
+                _scan_stop.set()
+                _scan_thread.join(timeout=2)
             logger.info("round_runner: simulate 完成 — %d steps", steps)
             try:
                 self._on_round_complete(server, round_no, steps)
