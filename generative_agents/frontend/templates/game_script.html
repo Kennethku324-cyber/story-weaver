@@ -225,8 +225,20 @@
 
 		let curr_focused_persona = document.getElementById("temp_focus").textContent;
 		if (curr_focused_persona != "") {
-			player.body.x = personas[curr_focused_persona].body.x;
-			player.body.y = personas[curr_focused_persona].body.y;
+			// [story-weaver:focus-fix] 嘗試多種 key 格式：underscore / space / 原值
+			let target = personas[curr_focused_persona];
+			if (!target && curr_focused_persona.indexOf("_") >= 0) {
+				target = personas[curr_focused_persona.replace(/_/g, " ")];
+			}
+			if (!target && curr_focused_persona.indexOf(" ") >= 0) {
+				target = personas[curr_focused_persona.replace(/ /g, "_")];
+			}
+			if (target && target.body) {
+				player.body.x = target.body.x;
+				player.body.y = target.body.y;
+			} else {
+				console.warn("[FOCUS] 搵唔到角色 sprite: " + curr_focused_persona + "，可用角色: " + Object.keys(personas).join(", "));
+			}
 			document.getElementById("temp_focus").innerHTML = "";
 		}
 

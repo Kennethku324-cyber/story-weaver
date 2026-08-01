@@ -325,10 +325,20 @@ function renderAffinity(affinity) {
 }
 
 function updateAgentsMeta(meta) {
+  const metaKeys = Object.keys(meta || {});
   AGENTS.forEach(function(name) {
-    const m = meta[name];
+    // [story-weaver:focus-fix] 嘗試多種 key 格式 lookup
+    let m = meta[name];
+    if (!m) {
+      let alt = name.replace(/ /g, "_");
+      m = meta[alt];
+    }
+    if (!m) {
+      let alt = name.replace(/_/g, " ");
+      m = meta[alt];
+    }
     if (!m) return;
-    const p = name.replace(" ", "_");
+    const p = name.replace(/_/g, " ").replace(/ /g, "_");
     $("#agent_desc__" + p).text(m.currently || "");
     $("#current_action__" + p).text(m.action || "");
     $("#target_address__" + p).text(m.location || "");
