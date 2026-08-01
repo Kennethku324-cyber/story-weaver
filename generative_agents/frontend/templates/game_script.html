@@ -270,19 +270,25 @@
 		}
 
 		if (finished || paused) return;
-		// [story-weaver:watchdog] 如果 step 停留超過 120 幀，強制推進
-		if (!window._watchdog) window._watchdog = {step: step, stuck: 0};
-		if (window._watchdog.step === step) {
-			window._watchdog.stuck++;
-			if (window._watchdog.stuck > 120) {
-				console.warn("[WATCHDOG] step " + step + " stuck " + window._watchdog.stuck + " frames, force advance");
-				step = step + 1;
-				execute_count = execute_count_max + 1;
+		// [story-weaver:watchdog] 如果 step 停留超過 120 幀，強制推進。
+		// ⚠️ 冇數據時（新 game 等第一次推演）絕對唔好開火：
+		// 呢度 set execute_count = max+1 之後下面會 early return，
+		// ec 卡死喺 max+1，之後數據到咗 ec==max 唔成立 → 唔 set
+		// movement_target → 讀 undefined[0] TypeError 整死成個 update loop。
+		if (Object.keys(all_movement).length > 0) {
+			if (!window._watchdog) window._watchdog = {step: step, stuck: 0};
+			if (window._watchdog.step === step) {
+				window._watchdog.stuck++;
+				if (window._watchdog.stuck > 120) {
+					console.warn("[WATCHDOG] step " + step + " stuck " + window._watchdog.stuck + " frames, force advance");
+					step = step + 1;
+					execute_count = execute_count_max + 1;   // 同正常 advance 一致：呢次 update 尾 -1 返去 max
+					window._watchdog.stuck = 0;
+				}
+			} else {
+				window._watchdog.step = step;
 				window._watchdog.stuck = 0;
 			}
-		} else {
-			window._watchdog.step = step;
-			window._watchdog.stuck = 0;
 		}
 		document.getElementById("ui-anim-step").textContent = step;
 		// 未有 frame 數據就唔好浪費 step（新 game 等緊第一次推演）
@@ -332,7 +338,9 @@
 						pronunciatios[curr_persona_name].setText(curr_persona_name + ": " + act);
 					}
 
-					if (execute_count > 0) {
+					// [story-weaver:defensive] target 未 set 嘅 frame 唔好郁，
+					// 否則讀 undefined[0] 會 throw 整死成個 update loop
+					if (execute_count > 0 && movement_target[curr_persona_name]) {
 						if (curr_persona.body.x < movement_target[curr_persona_name][0]) {
 							curr_persona.body.x += movement_speed;
 							anims_direction = "r"; pre_anims_direction_dict[curr_persona_name] = "r";
