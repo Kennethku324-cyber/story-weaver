@@ -2,43 +2,49 @@
 
 {% block content %}
 <style>
-  #topbar { padding: .6em 1em; background: #2b2b2b; color: #eee; display: flex;
-            align-items: center; gap: 1.2em; font-size: 15px; }
+  html, body, .container-fluid { height: 100%; margin: 0; padding: 0; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  #topbar { padding: .5em 1em; background: #2b2b2b; color: #eee; display: flex;
+            align-items: center; gap: 1em; font-size: 14px; flex-shrink: 0; }
   #topbar .label { color: #999; }
   #btn-round { background: #b3541e; color: #fff; border: none; border-radius: 999px;
-               padding: .5em 1.6em; font-weight: bold; }
-  #btn-round:disabled { background: #777; }
-  #error-banner, #readonly-banner { display: none; padding: .5em 1em; }
+               padding: .4em 1.4em; font-weight: bold; cursor: pointer; }
+  #btn-round:disabled { background: #777; cursor: default; }
+  #error-banner, #readonly-banner { display: none; padding: .4em 1em; flex-shrink: 0; }
   #error-banner { background: #f8d7da; color: #842029; }
   #readonly-banner { background: #fff3cd; color: #664d03; }
-  /* ── 右側 panel（push 地圖，唔 overlay）── */
-  #main-area { display: flex; flex-direction: row; align-items: stretch; }
-  #game-col { flex: 1; min-width: 0; overflow: hidden; }
-  #side-panel { width: 0; overflow: hidden; display: flex; flex-direction: column;
-                background: #fafafa; border-left: 2px solid #b3541e;
-                transition: width 0.2s; font-size: 13px; }
-  #side-panel:not(.collapsed) { width: 360px; }
-  #side-panel-toggle { flex-shrink: 0; writing-mode: vertical-rl;
-                       background: #b3541e; color: #fff; border: none;
-                       padding: 10px 6px; font-size: 13px; cursor: pointer;
-                       letter-spacing: 2px; }
-  #side-panel-toggle:hover { background: #c5652e; }
-  #side-panel-inner { flex: 1; display: flex; flex-direction: column;
-                      overflow: hidden; min-height: 0; }
-  #side-panel-tabs { display: flex; border-bottom: 1px solid #ddd; flex-shrink: 0; }
-  #side-panel-tabs span { flex: 1; text-align: center; padding: .4em 0; cursor: pointer;
-                          font-weight: bold; color: #999; font-size: 13px; }
-  #side-panel-tabs span.active { color: #b3541e; border-bottom: 2px solid #b3541e; }
-  #feed { overflow-y: auto; padding: .5em; font-size: 12px; flex: 1; }
-  .feed-event { margin-bottom: .3em; }
-  .feed-chat { margin-bottom: .5em; background: #fff; border-left: 3px solid #b3541e;
-               padding: .2em .5em; }
-  .feed-system { margin-bottom: .3em; color: #0b5ed7; font-style: italic; }
-  .feed-narrative { margin-bottom: .5em; background: #fdf3ec; border-left: 3px solid #b3541e;
-                    padding: .3em .6em; font-size: 13px; line-height: 1.4; }
-  .feed-time { color: #999; margin-right: .3em; }
-  #affinity-panel { overflow-y: auto; padding: .5em; flex: 1; }
-  #affinity-panel table { font-size: 12px; width: 100%; }
+  #story-banner { display:none; padding:.3em 1em; background:#fdf3ec;
+                  border-bottom:2px solid #b3541e; font-size:13px; flex-shrink: 0; }
+  /* ── 主區域：地圖全闊 + 下方資訊區 ── */
+  #game-container { flex: 1; min-height: 0; text-align: center; }
+  /* ── 角色 bar ── */
+  #char-bar { display: flex; justify-content: center; flex-wrap: wrap; gap: .2em;
+              padding: .3em; border-top: 1px solid #ddd; background: #f8f8f8; flex-shrink: 0; }
+  #char-bar .char-icon { text-align: center; cursor: pointer; padding: 2px 5px; border-radius: 6px; }
+  #char-bar .char-icon:hover { background: #e8e8e8; }
+  #char-bar .char-icon.active { background: #b3541e; color: #fff; }
+  #char-bar .char-icon img { width: 24px; border-radius: 3px; display: block; margin: 0 auto; }
+  #char-bar .char-icon span { font-size: 10px; }
+  /* ── 角色 detail（click 展開）── */
+  #char-detail { padding: .3em 1em; background: #f5f5f5; font-size: 12px;
+                 border-top: 1px solid #eee; flex-shrink: 0; min-height: 1.4em; }
+  /* ── 下方資訊 panel：故事情節 + 好感度 ── */
+  #bottom-panel { flex-shrink: 0; border-top: 2px solid #b3541e; display: flex; flex-direction: column; }
+  #bottom-tabs { display: flex; background: #f0f0f0; border-bottom: 1px solid #ddd; }
+  #bottom-tabs span { padding: .4em 1.2em; cursor: pointer; font-size: 13px; font-weight: bold;
+                      color: #999; border-bottom: 2px solid transparent; }
+  #bottom-tabs span.active { color: #b3541e; border-bottom-color: #b3541e; }
+  #feed { overflow-y: auto; padding: .4em .6em; font-size: 12px; height: 160px; }
+  .feed-event { margin-bottom: .2em; }
+  .feed-chat { margin-bottom: .4em; background: #fff; border-left: 3px solid #b3541e; padding: .2em .4em; }
+  .feed-system { margin-bottom: .2em; color: #0b5ed7; font-style: italic; }
+  .feed-narrative { margin-bottom: .4em; background: #fdf3ec; border-left: 3px solid #b3541e;
+                    padding: .2em .5em; font-size: 12px; line-height: 1.4; }
+  .feed-time { color: #999; margin-right: .2em; }
+  .feed-round-delim { text-align:center; font-size:10px; color:#b3541e;
+                      border-top:1px solid #e8c8b0; margin:.4em 0 .2em; padding:.1em 0; }
+  #affinity-panel { overflow-y: auto; padding: .4em .6em; height: 160px; }
+  #affinity-panel table { font-size: 12px; width: 100%; margin: 0; }
   /* ── 共用 ── */
   .option-card { border: 2px solid #ddd; border-radius: 8px; padding: .8em 1em;
                  margin-bottom: .8em; cursor: pointer; }
@@ -52,8 +58,6 @@
   .tl-dialogue { margin: .3em 0 .3em 1em; font-size: 13px; color: #333; }
   .tl-choice { color: #b3541e; font-size: 13px; }
   #char-count { font-size: 12px; color: #999; }
-  .feed-round-delim { text-align:center; font-size:11px; color:#b3541e;
-                      border-top:1px solid #e8c8b0; margin:.5em 0 .2em; padding:.2em 0; }
 </style>
 
 <div id="topbar">
@@ -77,65 +81,46 @@
   <span id="sb-pressure" style="margin-left:1em; color:#b3541e;"></span>
 </div>
 
-<!-- 地圖 + 側欄 flex row（panel push 地圖，唔 overlay） -->
-<div id="main-area">
-  <div id="game-col">
-    <div id="game-container" style="text-align: center"></div>
-  </div>
-  <div id="side-panel" class="collapsed">
-    <button id="side-panel-toggle" title="展開情節">📜 情節</button>
-    <div id="side-panel-inner">
-      <div id="side-panel-tabs">
-        <span class="active" data-tab="feed">📜 情節</span>
-        <span data-tab="affinity">❤️ 好感</span>
-      </div>
-      <div id="feed"></div>
-      <div id="affinity-panel" style="display:none">
-        <table class="table table-condensed"><tbody id="affinity-body"></tbody></table>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- 地圖（flex:1 填滿空間） -->
+<div id="game-container"></div>
 
-<!-- 角色 icon bar（地圖下面） -->
-<div style="display: flex; justify-content: center; flex-wrap: wrap; gap: .3em;
-            padding: .4em; border-top: 2px solid #ddd; background: #f8f8f8;">
+<!-- 角色 bar -->
+<div id="char-bar">
   {% for p in persona_names %}
-  <div style="text-align: center; cursor: pointer;" id="on_screen_det_trigger_container-{{ p }}">
-    <a href="javascript:void(0);" id="on_screen_det_trigger-{{ p }}"
-       style="text-decoration:none; color:#333;">
-      <div style="padding: 2px 6px; border-radius: 6px;">
-        <img src="{{ url_for('static', filename=persona_textures[p].portrait) }}" style="width: 28px; border-radius: 4px;">
-        <span style="font-size:11px; display:block;">{{ persona_display[p] }}</span>
-      </div>
+  <div class="char-icon" id="on_screen_det_trigger_container-{{ p }}">
+    <a href="javascript:void(0);" id="on_screen_det_trigger-{{ p }}" style="text-decoration:none;color:#333;">
+      <img src="{{ url_for('static', filename=persona_textures[p].portrait) }}">
+      <span>{{ persona_display[p] }}</span>
     </a>
   </div>
   {% endfor %}
 </div>
 
-<!-- 角色 detail panel（click 展開，喺 icon bar 下面） -->
-<div class="media" id="on_screen_det_content-init"
-     style="background-color:#f5f5f5; padding:.6em 1em; font-size:13px;">
-  <em>點擊角色可查看更多細節。</em>
-</div>
+<!-- 角色 detail（click 角色展開） -->
+<div id="char-detail"><em>點擊角色查看細節</em></div>
 {% for p in persona_names %}
-<div class="media" id="on_screen_det_content-{{ p }}"
-     style="background-color:#f5f5f5; display:none; padding:.5em 1em; font-size:13px;">
-  <div class="media-body">
-    <strong>{{ persona_display[p] }}</strong>
-    {% if persona_profiles.get(p) %}
-    <span style="color:#888; margin-left:.5em;">{{ persona_profiles[p] }}</span>
-    {% endif %}
-    {% if persona_relations.get(p) %}
-    <span style="color:#b3541e; font-size:12px; margin-left:.5em;">
-      {% for rel in persona_relations[p] %}{{ rel }}{% if not loop.last %} ｜ {% endif %}{% endfor %}
-    </span>
-    {% endif %}
-    <span style="margin-left:1em"><span id="agent_desc__{{ p }}"></span></span>
-    <span style="margin-left:1em">📍 <span id="target_address__{{ p }}"></span></span>
-  </div>
+<div id="on_screen_det_content-{{ p }}" style="display:none;">
+  <strong>{{ persona_display[p] }}</strong>
+  {% if persona_profiles.get(p) %}<span style="color:#888;margin-left:.5em;">{{ persona_profiles[p] }}</span>{% endif %}
+  {% if persona_relations.get(p) %}<span style="color:#b3541e;font-size:11px;margin-left:.5em;">
+    {% for rel in persona_relations[p] %}{{ rel }}{% if not loop.last %} ｜ {% endif %}{% endfor %}
+  </span>{% endif %}
+  <span style="margin-left:1em;"><span id="agent_desc__{{ p }}"></span></span>
+  <span style="margin-left:1em;">📍 <span id="target_address__{{ p }}"></span></span>
 </div>
 {% endfor %}
+
+<!-- 下方 panel：故事情節 + 好感度 -->
+<div id="bottom-panel">
+  <div id="bottom-tabs">
+    <span class="active" data-tab="feed">📜 故事情節</span>
+    <span data-tab="affinity">❤️ 好感度</span>
+  </div>
+  <div id="feed"></div>
+  <div id="affinity-panel" style="display:none">
+    <table class="table table-condensed"><tbody id="affinity-body"></tbody></table>
+  </div>
+</div>
 
 <!-- 決策 modal（唔可以撳背景 / ESC 關閉） -->
 <div class="modal fade" id="decision-modal" data-backdrop="static" data-keyboard="false" tabindex="-1">
@@ -578,38 +563,26 @@ $("#btn-replay").on("click", function() {
   });
 });
 
-// 角色詳情面板（沿用 index.html 機制）
+// 角色 click → show detail + move camera
 {% for p in persona_names %}
 $('#on_screen_det_trigger-{{ p }}').click(function() {
-  $('#on_screen_det_content-init').hide();
+  // hide all detail divs, show clicked
   {% for p_i in persona_names %}
   $('#on_screen_det_content-{{ p_i }}').hide();
-  $('#on_screen_det_trigger-{{ p_i }}').css({'font-weight': '500'});
+  $('#on_screen_det_trigger_container-{{ p_i }} .char-icon').removeClass('active');
   {% endfor %}
-  $('#on_screen_det_trigger-{{ p }}').css({'font-weight': '900'});
-  $('#on_screen_det_content-{{ p }}').show();
+  $('#char-detail').hide();
+  $('#on_screen_det_trigger_container-{{ p }} .char-icon').addClass('active');
+  $('#on_screen_det_content-{{ p }}').show().appendTo('#char-detail');
   document.getElementById("temp_focus").innerHTML = "{{ p }}";
 });
 {% endfor %}
 $("#game-container").append('<div style="display:none" id="temp_focus"></div>');
 
-// ── side panel toggle（push 地圖，唔 overlay）──
-$("#side-panel-toggle").on("click", function() {
-  const panel = $("#side-panel");
-  const toggle = $(this);
-  if (panel.hasClass("collapsed")) {
-    panel.removeClass("collapsed");
-    toggle.text("📜 ▶");
-  } else {
-    panel.addClass("collapsed");
-    toggle.text("📜 情節");
-  }
-  // 等 CSS transition 完（200ms）通知 Phaser resize
-  setTimeout(function() { window.dispatchEvent(new Event("resize")); }, 250);
-});
-$("#side-panel-tabs span").on("click", function() {
+// ── bottom panel tab switching ──
+$("#bottom-tabs span").on("click", function() {
   const tab = $(this).data("tab");
-  $("#side-panel-tabs span").removeClass("active");
+  $("#bottom-tabs span").removeClass("active");
   $(this).addClass("active");
   if (tab === "feed") {
     $("#feed").show(); $("#affinity-panel").hide();
