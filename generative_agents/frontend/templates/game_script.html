@@ -45,10 +45,18 @@
 	let finished = false;
 	let paused = false;
 
+	// [story-weaver:fit-container] 用地圖容器實際尺寸而唔係 full viewport
+	let game_container_el = document.getElementById("game-container");
+	let game_w = (game_container_el && game_container_el.clientWidth > 0)
+		? game_container_el.clientWidth / zoom
+		: document.documentElement.clientWidth / zoom;
+	let game_h = (game_container_el && game_container_el.clientHeight > 0)
+		? game_container_el.clientHeight / zoom
+		: document.documentElement.clientHeight / zoom;
 	const config = {
 		type: Phaser.AUTO,
-        width: document.documentElement.clientWidth / zoom,
-        height: document.documentElement.clientHeight / zoom,
+        width: game_w,
+        height: game_h,
 		parent: "game-container",
         mode: Phaser.Scale.FIT,
 		pixelArt: true,
