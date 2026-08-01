@@ -339,11 +339,10 @@
 					personas[curr_persona_name].body.y = movement_target[curr_persona_name][1];
 				}
 			}
-			execute_count = execute_count_max + 1;
 			step = step + 1;
 
-			// 適應式節奏：下一幀有角色鬱就慢（行路睇得舒服），
-			// 全員企定就快放跳過（唔使乾等 64 秒先見到鬱）
+			// [story-weaver:adaptive-fix] 適應式節奏：先 detect motion，
+			// 後 set execute_count（確保 first frame eq check 對齊新 max）
 			let motion = false;
 			if (step in all_movement) {
 				for (let agent_key in all_movement[step]) {
@@ -353,7 +352,7 @@
 				}
 			}
 			execute_count_max = motion ? 60 : 5;
-			if (execute_count > execute_count_max) execute_count = execute_count_max;
+			execute_count = execute_count_max + 1;
 
 			start_datetime = new Date(start_datetime.getTime() + step_size);
 			currentTime.setText(start_datetime.toLocaleTimeString("zh-HK", datetime_options));
