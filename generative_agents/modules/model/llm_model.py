@@ -15,6 +15,9 @@ class LLMModel:
         self._base_url = config["base_url"]
         self._model = config["model"]
         self._summary = {"total": [0, 0, 0]}
+        self._token_summary: dict[str, list[int]] = {}  # caller → [prompt, completion, total]
+        self._last_usage: dict[str, int] | None = None
+        self._cumulative_tokens = {"prompt": 0, "completion": 0, "total": 0}
 
         self._handle = self.setup(config)
         self._enabled = True
@@ -35,6 +38,7 @@ class LLMModel:
         **kwargs
     ):
         response = None
+        self._last_usage = None  # reset，避免 stale data
         self._summary.setdefault(caller, [0, 0, 0])
         call_start = time.perf_counter()
         attempts = 0
@@ -59,10 +63,33 @@ class LLMModel:
         pos = 2 if response is None else 1
         self._summary["total"][pos] += 1
         self._summary[caller][pos] += 1
+
+        # ── token tracking ──
+        usage = self._last_usage
+        prompt_tok = usage.get("prompt", 0) if usage else 0
+        completion_tok = usage.get("completion", 0) if usage else 0
+        total_tok = prompt_tok + completion_tok
+        if usage:
+            self._token_summary.setdefault(caller, [0, 0, 0])
+            self._token_summary[caller][0] += prompt_tok
+            self._token_summary[caller][1] += completion_tok
+            self._token_summary[caller][2] += total_tok
+            self._token_summary.setdefault("total", [0, 0, 0])
+            self._token_summary["total"][0] += prompt_tok
+            self._token_summary["total"][1] += completion_tok
+            self._token_summary["total"][2] += total_tok
+            self._cumulative_tokens["prompt"] += prompt_tok
+            self._cumulative_tokens["completion"] += completion_tok
+            self._cumulative_tokens["total"] += total_tok
+        self._last_usage = None
+
         timing_logger.info(
-            "llm_call caller=%s model=%s attempts=%d ok=%s duration=%.2fs",
+            "llm_call caller=%s model=%s attempts=%d ok=%s duration=%.2fs "
+            "prompt_tok=%d completion_tok=%d total_tok=%d cumul_tok=%d",
             caller, self._model, attempts, response is not None,
             time.perf_counter() - call_start,
+            prompt_tok, completion_tok, total_tok,
+            self._cumulative_tokens["total"],
         )
         return response or failsafe
 
@@ -77,8 +104,14 @@ class LLMModel:
     def get_summary(self):
         des = {}
         for k, v in self._summary.items():
-            des[k] = "S:{},F:{}/R:{}".format(v[1], v[2], v[0])
-        return {"model": self._model, "summary": des}
+            tok = self._token_summary.get(k, [0, 0, 0])
+            des[k] = "S:{},F:{}/R:{} tok(p:{:,},c:{:,},t:{:,})".format(
+                v[1], v[2], v[0], tok[0], tok[1], tok[2])
+        return {
+            "model": self._model,
+            "summary": des,
+            "cumulative_tokens": dict(self._cumulative_tokens),
+        }
 
     def disable(self):
         self._enabled = False
@@ -129,6 +162,14 @@ class OpenAILLMModel(LLMModel):
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         response = self._handle.chat.completions.create(**kwargs)
+        # ── token tracking ──
+        try:
+            self._last_usage = {
+                "prompt": response.usage.prompt_tokens,
+                "completion": response.usage.completion_tokens,
+            }
+        except Exception:
+            self._last_usage = None
         choice = response.choices[0]
         message = choice.message
 
@@ -218,7 +259,17 @@ class OllamaLLMModel(LLMModel):
         
         messages = [{"role": "user", "content": prompt}]
         response = self.ollama_chat(messages=messages, temperature=temperature, response_format=response_format)
-        
+
+        # ── token tracking ──
+        try:
+            usage = response.get("usage", {})
+            self._last_usage = {
+                "prompt": usage.get("prompt_tokens", 0),
+                "completion": usage.get("completion_tokens", 0),
+            }
+        except Exception:
+            self._last_usage = None
+
         if response and len(response.get("choices", [])) > 0:
             ret = response["choices"][0]["message"]["content"]
             # 从输出结果中过滤掉<think>标签内的文字，以免影响后续逻辑
