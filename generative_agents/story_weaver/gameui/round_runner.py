@@ -420,8 +420,10 @@ class RoundRunner:
             try:
                 pre_move = server.config.get("_pre_move_positions", {}) or {}
                 for agent_name, old_coord in pre_move.items():
+                    if not isinstance(old_coord, (list, tuple)) or len(old_coord) < 2:
+                        continue
                     agent = server.game.agents.get(agent_name)
-                    if agent is None or not agent.coord:
+                    if agent is None or not agent.coord or len(agent.coord) < 2:
                         continue
                     new_coord = list(agent.coord)
                     if old_coord != new_coord:
@@ -429,7 +431,7 @@ class RoundRunner:
                         # 距離愈遠愈多幀（最少 20，最多 90）
                         num_frames = min(max(int(dist * 3), 20), 90)
                         self.frames.inject_walking_path(
-                            agent_name, old_coord, new_coord,
+                            agent_name, list(old_coord), list(new_coord),
                             action=f"{agent_name} 正在前往命運嘅約定…",
                             num_frames=num_frames,
                         )

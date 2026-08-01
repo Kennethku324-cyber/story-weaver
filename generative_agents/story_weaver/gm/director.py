@@ -406,16 +406,17 @@ class GMDirector:
         """為每對角色揀一個共同見面地點。
         [story-weaver:dramatic-meet] 優先揀遠離兩人嘅 public 地點（公園、咖啡館、廣場），
         令角色必須跨區移動，生成可見嘅行路動畫。"""
-        # 戲劇性 public 地點：cafe(63,67), park(88,41), plaza(94,21), bar(62,18), library(90,72)
+        # 戲劇性 public 地點（全部 within maze 100x140）
         DRAMATIC_SPOTS: list[list] = [
             [63, 67],  # 咖啡館
             [88, 41],  # 公園
             [94, 21],  # 廣場
             [62, 18],  # 酒吧
             [90, 72],  # 圖書館
-            [52, 63],  # 玫瑰酒吧（備用）
-            [103, 42], # 市中心
+            [52, 63],  # 玫瑰酒吧
             [72, 38],  # 餐廳區
+            [38, 50],  # 河畔步道
+            [80, 55],  # 市集
         ]
         coords: dict[tuple, list] = {}
         for pair in pairs:
@@ -426,12 +427,12 @@ class GMDirector:
                 continue
             a = agents.get(pair[0])
             b = agents.get(pair[1])
-            a_coord = list(a.coord) if a and a.coord else None
-            b_coord = list(b.coord) if b and b.coord else None
+            a_coord = list(a.coord) if a and a.coord and len(a.coord) >= 2 else None
+            b_coord = list(b.coord) if b and b.coord and len(b.coord) >= 2 else None
 
             # [story-weaver:dramatic-meet] 揀離兩個角色都最遠嘅 public 地點
             coord = None
-            if a_coord and b_coord:
+            if a_coord and b_coord and len(a_coord) >= 2 and len(b_coord) >= 2:
                 best = None
                 best_dist = -1
                 for spot in DRAMATIC_SPOTS:
