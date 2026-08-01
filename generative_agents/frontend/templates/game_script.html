@@ -340,20 +340,8 @@
 				}
 			}
 			step = step + 1;
-
-			// [story-weaver:adaptive-fix] 適應式節奏：先 detect motion，
-			// 後 set execute_count（確保 first frame eq check 對齊新 max）
-			let motion = false;
-			if (step in all_movement) {
-				for (let agent_key in all_movement[step]) {
-					let m = all_movement[step][agent_key]["movement"];
-					let last = last_applied[agent_key];
-					if (!last || last[0] !== m[0] || last[1] !== m[1]) { motion = true; break; }
-				}
-			}
-			execute_count_max = motion ? 60 : 5;
+			// [story-weaver:no-adaptive] 停用適應式節奏，固定 execute_count_max 避免 desync
 			execute_count = execute_count_max + 1;
-
 			start_datetime = new Date(start_datetime.getTime() + step_size);
 			currentTime.setText(start_datetime.toLocaleTimeString("zh-HK", datetime_options));
 		}
