@@ -13,14 +13,14 @@
   #readonly-banner { background: #fff3cd; color: #664d03; }
   /* ── 右下 floating 故事情節 panel ── */
   #side-panel { position: fixed; bottom: 0; right: 0; z-index: 1000;
-                width: 360px; max-height: 55vh; display: flex; flex-direction: column;
+                width: 360px; max-height: 50vh; display: flex; flex-direction: column;
                 font-size: 13px; }
-  #side-panel.collapsed { max-height: none; }
-  #side-panel-toggle { position: absolute; top: -28px; right: 8px;
-                       background: #b3541e; color: #fff; border: none;
-                       border-radius: 6px 6px 0 0; padding: 3px 12px;
-                       font-size: 12px; cursor: pointer; opacity: 0.85; }
-  #side-panel-toggle:hover { opacity: 1; }
+  #side-panel.collapsed #side-panel-inner { display: none; }
+  #side-panel-toggle { position: absolute; bottom: 0; right: 8px;
+                       background: rgba(179,84,30,0.85); color: #fff; border: none;
+                       border-radius: 6px 6px 0 0; padding: 4px 14px;
+                       font-size: 12px; cursor: pointer; }
+  #side-panel-toggle:hover { background: #b3541e; }
   #side-panel-inner { background: rgba(250,250,250,0.94); border: 1px solid #ddd;
                       border-right: none; border-bottom: none; border-radius: 8px 0 0 0;
                       overflow: hidden; display: flex; flex-direction: column;
@@ -120,9 +120,9 @@
 </div>
 {% endfor %}
 
-<!-- 右下 floating panel：故事情節 + 好感度 -->
-<div id="side-panel">
-  <button id="side-panel-toggle" title="收合/展開">▲ 故事情節</button>
+<!-- 右下 floating panel：故事情節 + 好感度（預設隱藏） -->
+<div id="side-panel" class="collapsed">
+  <button id="side-panel-toggle" title="展開情節">📜 情節 ◀</button>
   <div id="side-panel-inner">
     <div id="side-panel-tabs">
       <span class="active" data-tab="feed">📜 情節</span>
@@ -594,16 +594,13 @@ $("#game-container").append('<div style="display:none" id="temp_focus"></div>');
 // ── floating panel toggle + tab switching ──
 $("#side-panel-toggle").on("click", function() {
   const panel = $("#side-panel");
-  const inner = $("#side-panel-inner");
   const toggle = $(this);
   if (panel.hasClass("collapsed")) {
     panel.removeClass("collapsed");
-    inner.show();
-    toggle.text("▲ 故事情節");
+    toggle.text("📜 情節 ▶");
   } else {
     panel.addClass("collapsed");
-    inner.hide();
-    toggle.text("▼ 故事情節");
+    toggle.text("📜 情節 ◀");
   }
 });
 $("#side-panel-tabs span").on("click", function() {
