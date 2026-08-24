@@ -1,6 +1,7 @@
 """Generator 測試（spec §11）：LLM 全敗 fallback、validator 拒垃圾、token 紅線、捷徑。"""
 
 import os
+from pathlib import Path
 
 from story_weaver.recap.generator import (
     CONTEXT_BUDGET_RATIO,
@@ -16,7 +17,7 @@ from story_weaver.recap.models import (
 )
 from story_weaver.recap.prompts import RecapPrompt
 
-GEN_DIR = "/Users/kenneth/Projects/story-weaver/generative_agents"
+GEN_DIR = str(Path(__file__).resolve().parents[2] / "generative_agents")
 PROMPTS_DIR = os.path.join(GEN_DIR, "data", "prompts")
 
 NAMES = ["阿珍", "阿強"]

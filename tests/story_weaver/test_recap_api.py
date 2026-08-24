@@ -1,6 +1,7 @@
 """API 測試（spec §11）：schema、分頁、markdown 導出、降級提示、LLM 失敗唔 500。"""
 
 import os
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -11,7 +12,7 @@ from story_weaver.recap.service import RecapService
 
 from test_recap_extractors import make_checkpoint, make_sim  # noqa: E402
 
-GEN_DIR = "/Users/kenneth/Projects/story-weaver/generative_agents"
+GEN_DIR = str(Path(__file__).resolve().parents[2] / "generative_agents")
 PROMPTS_DIR = os.path.join(GEN_DIR, "data", "prompts")
 
 PROFILES = [
