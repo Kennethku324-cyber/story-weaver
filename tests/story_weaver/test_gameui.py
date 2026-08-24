@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -22,8 +23,9 @@ from story_weaver.gameui.incremental import FrameBuffer
 from story_weaver.gameui.models import UIStatus
 from story_weaver.gameui.round_runner import RoundBusyError, RoundRunner, scan_checkpoints
 from story_weaver.gameui.state_store import GameUIStateStore, create_initial_state
+from story_weaver.recap import RecapService
 
-GEN_DIR = "/Users/kenneth/Projects/story-weaver/generative_agents"
+GEN_DIR = str(Path(__file__).resolve().parents[2] / "generative_agents")
 PROMPTS_GM = os.path.join(GEN_DIR, "data", "prompts_gm")
 
 AGENTS = ["阿珍", "阿強", "小美", "阿明"]
@@ -190,7 +192,7 @@ def make_runner(tmp_path, name="s1", block_event=None, **kwargs):
     server = FakeSimServer(folder, block_event=block_event)
     runner = RoundRunner(
         name, folder,
-        gm=gm, recap=None, maze=FakeMaze(),
+        gm=gm, recap=RecapService(checkpoints_root=str(tmp_path), llm=FakeLLM()), maze=FakeMaze(),
         server_factory=lambda r: server,
         **kwargs,
     )
@@ -276,7 +278,7 @@ def test_round_happy_path(tmp_path):
     assert round_no == 1
     assert wait_status(runner, UIStatus.WAITING_DECISION)
     state = runner.store.load()
-    assert state.sim_step_cursor == 6  # steps_per_round 預設 6
+    assert state.sim_step_cursor == runner.steps_per_round()
     # GM pending 已出
     pending = gm.get_pending_decision()
     assert pending is not None

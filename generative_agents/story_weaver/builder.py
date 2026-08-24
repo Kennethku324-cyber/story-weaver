@@ -8,6 +8,7 @@ import copy
 import json
 import logging
 import os
+import posixpath
 import random
 import shutil
 import threading
@@ -397,7 +398,7 @@ class StoryBuilder:
         for char in req.characters:
             dir_name = char.display_name.replace(" ", "_")
             agents[char.display_name] = {
-                "config_path": os.path.join(
+                "config_path": posixpath.join(
                     "assets", "village", "story_agents", req.story_name, dir_name, "agent.json"
                 ),
                 # checkpoint 持久化：SimulateServer 每 step update(to_dict())

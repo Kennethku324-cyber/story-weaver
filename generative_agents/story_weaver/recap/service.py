@@ -28,6 +28,7 @@ from .models import (
     TimelineEvent,
 )
 from .store import StoryRecapStore
+from story_weaver.paths import DATA_CONFIG_PATH, RECAP_PROMPTS_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,9 @@ def _now_iso() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-def _default_llm_config(data_config_path: str = "data/config.json") -> dict | None:
+def _default_llm_config(data_config_path: str | None = None) -> dict | None:
     try:
-        with open(data_config_path, "r", encoding="utf-8") as f:
+        with open(data_config_path or DATA_CONFIG_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
         return config["agent"]["think"]["llm"]
     except Exception:
@@ -57,7 +58,7 @@ class RecapService:
         static_root: str = "frontend/static",
         llm_config: dict | None = None,
         llm=None,
-        template_path: str = "data/prompts",
+        template_path: str | None = None,
         context_window: int = 8192,
     ) -> None:
         self._root = checkpoints_root
@@ -66,7 +67,7 @@ class RecapService:
         if llm_config is None and llm is None:
             llm_config = _default_llm_config()
         self._generator = RecapGenerator(
-            llm_config=llm_config, template_path=template_path,
+            llm_config=llm_config, template_path=template_path or str(RECAP_PROMPTS_ROOT),
             llm=llm, context_window=context_window,
         )
         self._events = EventExtractor()

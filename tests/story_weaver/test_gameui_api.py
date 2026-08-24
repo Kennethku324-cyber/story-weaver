@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -11,6 +12,7 @@ from story_weaver.gm import GMDirector
 from story_weaver.gameui import game_server
 from story_weaver.gameui.models import UIStatus
 from story_weaver.gameui.round_runner import RoundRunner
+from story_weaver.recap import RecapService
 
 from test_gameui import (
     AGENTS,
@@ -21,7 +23,7 @@ from test_gameui import (
     wait_status,
 )
 
-GEN_DIR = "/Users/kenneth/Projects/story-weaver/generative_agents"
+GEN_DIR = str(Path(__file__).resolve().parents[2] / "generative_agents")
 PROMPTS_GM = os.path.join(GEN_DIR, "data", "prompts_gm")
 
 
@@ -35,7 +37,7 @@ def client(tmp_path, monkeypatch):
         gm = GMDirector(session, folder, {}, AGENTS, prompts_dir=PROMPTS_GM, llm=FakeLLM())
         server = FakeSimServer(folder)
         return RoundRunner(
-            session, folder, gm=gm, recap=None, maze=FakeMaze(),
+            session, folder, gm=gm, recap=RecapService(checkpoints_root=str(tmp_path), llm=FakeLLM()), maze=FakeMaze(),
             server_factory=lambda r: server,
         )
 

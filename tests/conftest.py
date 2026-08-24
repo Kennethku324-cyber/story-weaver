@@ -9,10 +9,11 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
-GEN_DIR = "/Users/kenneth/Projects/story-weaver/generative_agents"
+GEN_DIR = str(Path(__file__).resolve().parents[1] / "generative_agents")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
 

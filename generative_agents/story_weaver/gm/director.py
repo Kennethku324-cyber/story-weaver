@@ -15,6 +15,7 @@ from modules import memory, utils
 from modules.model.llm_model import create_llm_model
 from story_weaver.affinity.gm import GMAdjustmentItem, GMAdjustmentResponse, apply_gm_response
 from story_weaver.affinity.store import AffinityStore
+from story_weaver.paths import GM_CONFIG_PATH, GM_PROMPTS_ROOT
 
 from .delta import RoundBaseline, RoundDeltaCollector
 from .injector import INJECT_OBJECT, PREDICATE_CUSTOM, PREDICATE_OPTION, MemoryInjector
@@ -144,7 +145,7 @@ class GMDirector:
         checkpoints_folder: str,
         llm_config: dict,
         agent_names: list[str],
-        prompts_dir: str = "data/prompts_gm",
+        prompts_dir: str | None = None,
         gm_config: dict | None = None,
         llm=None,
         state: GMStateStore | None = None,
@@ -166,7 +167,7 @@ class GMDirector:
             except Exception:
                 logger.warning("gm: LLM 初始化失敗，全部 LLM 功能行 failsafe", exc_info=True)
                 self._llm = None
-        self._prompter = GMPrompter(self._llm, prompts_dir) if self._llm else None
+        self._prompter = GMPrompter(self._llm, prompts_dir or str(GM_PROMPTS_ROOT)) if self._llm else None
         self._injector = MemoryInjector()
         self._collector = RoundDeltaCollector()
 
@@ -1041,7 +1042,7 @@ class GMDirector:
         sim_name: str,
         checkpoints_folder: str,
         llm_config: dict,
-        prompts_dir: str = "data/prompts_gm",
+        prompts_dir: str | None = None,
         gm_config: dict | None = None,
         llm=None,
     ) -> "GMDirector":
@@ -1060,10 +1061,10 @@ class GMDirector:
         )
 
 
-def load_gm_config(path: str = "data/gm_config.json") -> dict:
+def load_gm_config(path: str | None = None) -> dict:
     """讀 data/gm_config.json；唔存在返預設。"""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path or GM_CONFIG_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         logger.warning("gm: gm_config.json 讀取失敗，用預設值", exc_info=True)

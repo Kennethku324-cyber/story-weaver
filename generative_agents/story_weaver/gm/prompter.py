@@ -11,6 +11,8 @@ import logging
 import os
 from string import Template
 
+from story_weaver.paths import GM_PROMPTS_ROOT
+
 from .models import (
     CustomCommandParse,
     CustomCommandParseResponse,
@@ -54,9 +56,9 @@ def _format_events(events: list[dict]) -> str:
 class GMPrompter:
     """三個 GM 模板嘅載入、組裝、呼叫。所有方法 LLM 失敗都返 failsafe，唔 raise。"""
 
-    def __init__(self, llm, prompts_dir: str = "data/prompts_gm") -> None:
+    def __init__(self, llm, prompts_dir: str | None = None) -> None:
         self._llm = llm
-        self._dir = prompts_dir
+        self._dir = prompts_dir or str(GM_PROMPTS_ROOT)
 
     def round_analysis(
         self,

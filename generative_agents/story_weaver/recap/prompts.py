@@ -11,6 +11,7 @@ import os
 from string import Template
 
 from pydantic import BaseModel, Field
+from story_weaver.paths import RECAP_PROMPTS_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ class CumulativeRecapResponse(BaseModel):
 
 
 class RecapPrompt:
-    def __init__(self, template_path: str = "data/prompts") -> None:
-        self._dir = template_path
+    def __init__(self, template_path: str | None = None) -> None:
+        self._dir = template_path or str(RECAP_PROMPTS_ROOT)
 
     def _load(self, filename: str) -> Template:
         with open(os.path.join(self._dir, filename), "r", encoding="utf-8") as f:
